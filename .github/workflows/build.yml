@@ -1,0 +1,51 @@
+name: Build BareMetal LogicSim
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          brew install sdl2 sdl2_image sdl2_ttf cmake
+      - name: Configure CMake
+        run: |
+          mkdir build-macos
+          cd build-macos
+          cmake ..
+      - name: Build
+        run: |
+          cd build-macos
+          make -j$(sysctl -n hw.ncpu)
+      - name: List build output
+        run: |
+          ls -lh build-macos
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev cmake build-essential
+      - name: Configure CMake
+        run: |
+          mkdir build-linux
+          cd build-linux
+          cmake ..
+      - name: Build
+        run: |
+          cd build-linux
+          make -j$(nproc)
+      - name: List build output
+        run: |
+          ls -lh build-linux
