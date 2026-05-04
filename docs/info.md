@@ -78,5 +78,28 @@ the ocpu features a dual-core architectural approach utilizing a multi-level fsm
 - the programmer-visible registers include an 8-bit accumulator (a), index registers (x, y), and an 8-bit stack pointer (sp).
 - the internal datapath consists of a program counter (pc), instruction register (ir), and memory data register (mdr). note that the pc is 16-bit, allowing standard 64kb addressability natively.
 - the peripheral registers include interrupt vector and enable registers. to securely access mbits of external memory beyond the standard 64kb address space without complicating external peripheral logic, a zero-page memory-mapped i/o (mmio) banking register is used. writing to address `0xff` (e.g., `sta $ff`) inherently flips the upper memory lines sent from the cpu out to the external serial memory, maintaining hardware simplicity and 100% isa compatibility with standard 6502 compilers.
-- the controllable target pll behaves independently so the cpu clock speed can be dynamically governed externally to control power draw and test frequency bounds.
+- the controllable target pll behaves independently so the cpu clock speed can be dynamically governed externally to control power draw and test frequency bounds, the pll will be muxed with the external clock the tt chip so that we can avoid it if need be.
+- we will also add a very small piece of cache that we can read to see how much overclocking we have done as our io is limited to 50mhz maybe higher if we don't use tt pcb. we can then query this cache at 50mhz and see what the overclocked rate is.
 
+## instructions mapped to cycles
+| instruction | mode | cycle 0 | cycle 1 | cycle 2 | cycle 3 | cycle 4 | cycle 5 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `lda / ldx / ldy #imm` | immediate | fetch opcode | fetch imm (update reg) | - | - | - | - |
+| `lda / ldx / ldy addr` | absolute | fetch opcode | fetch addr_l | fetch addr_h | read memory (update reg) | - | - |
+| `sta / stx / sty addr` | absolute | fetch opcode | fetch addr_l | fetch addr_h | write register to mem | - | - |
+| `lda addr,x` | abs, x | fetch opcode | fetch addr_l | fetch addr_h | read mem at addr+x | - | - |
+| `sta addr,x` | abs, x | fetch opcode | fetch addr_l | fetch addr_h | write mem at addr+x | - | - |
+| `lda (addr),y` | ind, y | fetch opcode | fetch zp_ptr | read ptr_l | read ptr_h | read mem at ptr+y | - |
+| `sta (addr),y` | ind, y | fetch opcode | fetch zp_ptr | read ptr_l | read ptr_h | write mem at ptr+y| - |
+| `adc / sbc / etc. addr`| absolute | fetch opcode | fetch addr_l | fetch addr_h | read memory | alu execute | - |
+| `asl / lsr` | accumulator | fetch opcode | execute shift | - | - | - | - |
+| `inx/dex / iny/dey` | implied | fetch opcode | execute inc/dec | - | - | - | - |
+| `tax/txa / tay/tya` | implied | fetch opcode | execute transfer | - | - | - | - |
+| `sec/clc / sei/cli` | implied | fetch opcode | execute flag update| - | - | - | - |
+| `jmp addr` | absolute | fetch opcode | fetch addr_l | fetch addr_h (pc = addr)| - | - | - |
+| `beq / bne / bcs / bcc`| relative | fetch opcode | fetch offset | offset pc (if true) | - | - | - |
+| `jsr addr` | absolute | fetch opcode | fetch addr_l | push pc_h | push pc_l | fetch addr_h | - |
+| `rts` | implied | fetch opcode | pop pc_l | pop pc_h | inc pc | - | - |
+| `rti` | implied | fetch opcode | pop sr | pop pc_l | pop pc_h | - | - |
+| `pha` | implied | fetch opcode | push a | - | - | - | - |
+| `pla` | implied | fetch opcode | pop a | - | - | - | - |
