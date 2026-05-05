@@ -18,7 +18,7 @@ project:
   source_files:
     - "project.v"
     - "ocpu_core.v"
-    - "spi_memory.v"    
+    - "spi_memory.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
 pinout:
