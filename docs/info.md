@@ -102,3 +102,17 @@ the ocpu features a single-core architectural approach utilizing a multi-level f
 | `rti` | implied | fetch opcode | pop sr | pop pc_l | pop pc_h | - | - |
 | `pha` | implied | fetch opcode | push a | - | - | - | - |
 | `pla` | implied | fetch opcode | pop a | - | - | - | - |
+
+## opcodes
+        0x00        0x01        0x02        0x03
+0x00    LDA #       LDA abs     LDA abs,x    LDA (abs),y
+0x04    LDX #       LDX abs     LDY #        LDY abs
+0x08    STA abs     STA abs,x   STA (abs),y  STX abs
+0x0C    STY abs     ADC abs     SBC abs      AND abs
+0x10    EOR abs     ORA abs     ASL          LSR
+0x14    INX         DEX         INY          DEY
+0x18    TAX         TXA         TAY          TYA
+0x1C    SEC         CLC         SEI          CLI
+0x20    JMP abs     JSR abs     RTS          RTI
+0x24    PHA         PLA         BEQ          BNE
+0x28    BCS         BCC         —            —

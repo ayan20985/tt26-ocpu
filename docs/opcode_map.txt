@@ -1,0 +1,55 @@
+0x00 lda #
+0x01 lda abs
+0x02 lda abs,x
+0x03 lda (abs),y
+0x04 ldx #
+0x05 ldx abs
+0x06 ldy #
+0x07 ldy abs
+0x08 sta abs
+0x09 sta abs,x
+0x0a sta (abs),y
+0x0b stx abs
+0x0c sty abs
+0x0d adc abs
+0x0e sbc abs
+0x0f and abs
+0x10 eor abs
+0x11 ora abs
+0x12 asl
+0x13 lsr
+0x14 inx
+0x15 dex
+0x16 iny
+0x17 dey
+0x18 tax
+0x19 txa
+0x1a tay
+0x1b tya
+0x1c sec
+0x1d clc
+0x1e sei
+0x1f cli
+0x20 jmp abs
+0x21 jsr abs
+0x22 rts
+0x23 rti
+0x24 pha
+0x25 pla
+0x26 beq
+0x27 bne
+0x28 bcs
+0x29 bcc
+
+        0x00        0x01        0x02        0x03
+0x00    LDA #       LDA abs     LDA abs,x    LDA (abs),y
+0x04    LDX #       LDX abs     LDY #        LDY abs
+0x08    STA abs     STA abs,x   STA (abs),y  STX abs
+0x0C    STY abs     ADC abs     SBC abs      AND abs
+0x10    EOR abs     ORA abs     ASL          LSR
+0x14    INX         DEX         INY          DEY
+0x18    TAX         TXA         TAY          TYA
+0x1C    SEC         CLC         SEI          CLI
+0x20    JMP abs     JSR abs     RTS          RTI
+0x24    PHA         PLA         BEQ          BNE
+0x28    BCS         BCC         —            —
