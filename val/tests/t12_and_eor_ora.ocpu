@@ -1,0 +1,11 @@
+    lda #$3c
+    sta $0070
+    lda #$0f
+    and $0070
+    eor $0070
+    ora $0070
+    jmp done
+
+    .org $00f0
+done:
+    jmp done

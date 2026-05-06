@@ -89,7 +89,7 @@ def main():
 
         actual = read_kv(out_path)
         for key, value in expected.items():
-            if key in {"max_cycles", "load_addr", "stop_pc", "steps", "buslog"}:
+            if key in {"max_cycles", "load_addr", "stop_pc", "steps", "buslog", "expect_fail"}:
                 continue
             if key not in actual:
                 print(f"missing key {key} in {out_path.name}")

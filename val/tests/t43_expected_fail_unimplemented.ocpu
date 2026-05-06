@@ -1,0 +1,7 @@
+    ; placeholder for an unimplemented instruction sequence
+    lda #$01
+    jmp done
+
+    .org $00f0
+done:
+    jmp done

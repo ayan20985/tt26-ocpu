@@ -1,0 +1,9 @@
+    lda #$1e
+    pha
+    lda #$00
+    pla
+    jmp done
+
+    .org $00f0
+done:
+    jmp done

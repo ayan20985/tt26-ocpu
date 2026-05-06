@@ -1,0 +1,10 @@
+    ldx #$05
+loop:
+    dex
+    bne loop
+    lda #$77
+    jmp done
+
+    .org $00f0
+done:
+    jmp done

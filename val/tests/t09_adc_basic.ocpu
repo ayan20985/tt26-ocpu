@@ -1,0 +1,9 @@
+    lda #$03
+    sta $0040
+    lda #$04
+    adc $0040
+    jmp done
+
+    .org $00f0
+done:
+    jmp done

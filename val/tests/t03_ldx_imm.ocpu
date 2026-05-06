@@ -1,0 +1,6 @@
+    ldx #$1f
+    jmp done
+
+    .org $00f0
+done:
+    jmp done

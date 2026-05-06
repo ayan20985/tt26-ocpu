@@ -1,0 +1,9 @@
+    ; test interrupt mask (sei/cli) behavior; mark expected-fail if not modeled
+    sei
+    lda #$09
+    cli
+    jmp done
+
+    .org $00f0
+done:
+    jmp done

@@ -1,0 +1,15 @@
+    ; indirect Y where base low byte + Y wraps page
+    lda #$ff
+    sta $0010
+    lda #$00
+    sta $0011
+    ldy #$01
+    lda ($10),y
+    jmp done
+
+    .org $0100
+    .byte $66
+
+    .org $00f0
+done:
+    jmp done

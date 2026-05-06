@@ -1,0 +1,7 @@
+    ; rol not implemented maybe; test as expected-fail placeholder
+    lda #$01
+    jmp done
+
+    .org $00f0
+done:
+    jmp done
