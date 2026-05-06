@@ -11,21 +11,21 @@ module tt_um_ocpu (
     input  wire       rst_n     // active low reset signal.
 `ifdef OCPU_SIM
     ,
-    output wire [7:0] dbg_a,
-    output wire [7:0] dbg_x,
-    output wire [7:0] dbg_y,
-    output wire [7:0] dbg_sp,
-    output wire [7:0] dbg_sr,
-    output wire [7:0] dbg_ir,
+    output wire [5:0] dbg_a,
+    output wire [5:0] dbg_x,
+    output wire [5:0] dbg_y,
+    output wire [5:0] dbg_sp,
+    output wire [5:0] dbg_sr,
+    output wire [5:0] dbg_ir,
     output wire [15:0] dbg_pc,
-    output wire [7:0] dbg_mmio_bank,
-    output wire [7:0] dbg_oc_cache
+    output wire [5:0] dbg_mmio_bank,
+    output wire [5:0] dbg_oc_cache
 `endif
 );
- reg cache [7:0][31:0];
+ reg cache [5:0][31:0];
     // shared system registers
-    reg [7:0] mmio_bank;     // mmio bank register for memory paging beyond 64kb.
-    reg [7:0] oc_cache;      // overclocking diagnostic cache register.
+    reg [5:0] mmio_bank;     // mmio bank register for memory paging beyond 64kb.
+    reg [5:0] oc_cache;      // overclocking diagnostic cache register.
     
     // master fsm setup
     localparam MASTER_STATE_INIT = 0,
@@ -43,9 +43,9 @@ module tt_um_ocpu (
     wire        c0_mem_req;
     wire        c0_mem_rw;
     wire [15:0] c0_mem_addr;
-    wire [7:0]  c0_mem_wdata;
+    wire [5:0]  c0_mem_wdata;
     reg         c0_mem_ready;
-    reg  [7:0]  c0_mem_rdata;
+    reg  [5:0]  c0_mem_rdata;
 
     ocpu_core core0 (
         .clk(clk),
@@ -77,7 +77,7 @@ module tt_um_ocpu (
     wire spi_sck;
     wire spi_cs_n;
     wire spi_mosi;
-    wire pll_ctrl = (mmio_bank[7]);
+    wire pll_ctrl = (mmio_bank[5]);
     
     assign uo_out[0] = spi_sck;
     assign uo_out[1] = spi_cs_n;
@@ -96,9 +96,9 @@ module tt_um_ocpu (
     reg        spi_req;
     reg        spi_rw;
     reg [23:0] spi_addr;
-    reg [7:0]  spi_wdata;
+    reg [5:0]  spi_wdata;
     wire       spi_ready;
-    wire [7:0] spi_rdata;
+    wire [5:0] spi_rdata;
 
     spi_memory spi_ctrl (
         .clk(clk),
@@ -152,7 +152,7 @@ module tt_um_ocpu (
                         end else begin
                             spi_req <= 1;
                             spi_rw <= c0_mem_rw;
-                            spi_addr <= {mmio_bank, c0_mem_addr};
+                            spi_addr <= {{2'b00, mmio_bank}, c0_mem_addr};
                             spi_wdata <= c0_mem_wdata;
                             arb_state <= ARB_C0_REQ;
                         end

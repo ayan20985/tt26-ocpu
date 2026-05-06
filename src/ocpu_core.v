@@ -7,12 +7,12 @@ module ocpu_core (
     input  wire        run_enable,
     output wire        is_halted,
 `ifdef OCPU_SIM
-    output wire [7:0]  dbg_a,
-    output wire [7:0]  dbg_x,
-    output wire [7:0]  dbg_y,
-    output wire [7:0]  dbg_sp,
-    output wire [7:0]  dbg_sr,
-    output wire [7:0]  dbg_ir,
+    output wire [5:0]  dbg_a,
+    output wire [5:0]  dbg_x,
+    output wire [5:0]  dbg_y,
+    output wire [5:0]  dbg_sp,
+    output wire [5:0]  dbg_sr,
+    output wire [5:0]  dbg_ir,
     output wire [15:0] dbg_pc,
 `endif
 
@@ -23,21 +23,23 @@ module ocpu_core (
     output reg         mem_req,
     output reg         mem_rw,
     output reg  [15:0] mem_addr,
-    output reg  [7:0]  mem_wdata,
+    output reg  [5:0]  mem_wdata,
     input  wire        mem_ready,
-    input  wire [7:0]  mem_rdata
+    input  wire [5:0]  mem_rdata
 );
 
-    reg [7:0] a;      
-    reg [7:0] x;      
-    reg [7:0] y;      
-    reg [7:0] sp;     
+    reg [5:0] a;      
+    reg [5:0] x;      
+    reg [5:0] y;      
+    reg [5:0] sp;     
     reg [15:0] pc;    
-    reg [7:0] sr;     
-    reg [7:0] ir;     
+    reg [5:0] sr;     
+    reg [5:0] ir;     
 
     reg [15:0] ea;
-    reg [7:0] t1;
+    reg [5:0]  mdr;
+    reg [15:0] memAddr;
+    reg [5:0] t1;
 
     localparam STATE_RESET     = 5'd0,
                STATE_FETCH     = 5'd1,
@@ -71,10 +73,10 @@ module ocpu_core (
         if (!rst_n) begin
             state <= STATE_RESET;
             a <= 0; x <= 0; y <= 0;
-            sp <= 8'hFF; pc <= 16'h0000;
-            sr <= 8'h20; ir <= 0;
+            sp <= 6'h3F; pc <= 16'h0000;
+            sr <= 6'h20; ir <= 0;
             mem_req <= 0; mem_rw <= 0;
-            ea <= 0; t1 <= 0;
+            ea <= 0; mdr <= 0; memAddr <= 0; t1 <= 0;
         end else if (force_pc_en) begin
             pc <= force_pc_val;
             state <= STATE_FETCH;
@@ -85,9 +87,11 @@ module ocpu_core (
                 end
                 
                 STATE_FETCH: begin
-                    mem_req <= 1;
-                    mem_rw <= 0;
-                    mem_addr <= pc;
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 0;
+                        mem_addr <= pc;
+                    end
                     if (mem_ready) begin
                         ir <= mem_rdata;
                         mem_req <= 0;
@@ -109,10 +113,16 @@ module ocpu_core (
                 end
 
                 STATE_OP1: begin
-                    mem_req <= 1; mem_rw <= 0; mem_addr <= pc;
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 0;
+                        mem_addr <= pc;
+                    end
                     if (mem_ready) begin
-                        ea[7:0] <= mem_rdata;
-                        mem_req <= 0; pc <= pc + 1;
+                        ea[5:0] <= mem_rdata;
+                        ea[15:6] <= 10'b0;
+                        mem_req <= 0;
+                        pc <= pc + 1;
                         if (ir == 8'hA9 || ir == 8'hA2 || ir == 8'hA0 || ir == 8'hF0 || ir == 8'hD0 || ir == 8'hB0 || ir == 8'h90) begin
                             state <= STATE_EXECUTE;
                         end else if (ir == 8'hB1 || ir == 8'h91) begin
@@ -124,57 +134,83 @@ module ocpu_core (
                 end
 
                 STATE_OP2: begin
-                    mem_req <= 1; mem_rw <= 0; mem_addr <= pc;
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 0;
+                        mem_addr <= pc;
+                    end
                     if (mem_ready) begin
-                        ea[15:8] <= mem_rdata;
-                        mem_req <= 0; pc <= pc + 1;
+                        mem_req <= 0;
+                        pc <= pc + 1;
                         if (ir == 8'hBD || ir == 8'h9D) begin
                             ea <= {mem_rdata, ea[7:0]} + x;
                         end else begin
                             ea <= {mem_rdata, ea[7:0]};
                         end
                         
-                        if (ir == 8'h4C || ir == 8'h20) state <= STATE_EXECUTE;
-                        else if (ir == 8'h8D || ir == 8'h8E || ir == 8'h8C || ir == 8'h9D) state <= STATE_MEM_WRITE;
-                        else state <= STATE_MEM_READ;
+                        if (ir == 8'h4C || ir == 8'h20) begin
+                            state <= STATE_EXECUTE;
+                        end else if (ir == 8'h8D || ir == 8'h8E || ir == 8'h8C || ir == 8'h9D) begin
+                            memAddr <= (ir == 8'hBD || ir == 8'h9D) ? ({mem_rdata, ea[7:0]} + x) : ({mem_rdata, ea[7:0]});
+                            state <= STATE_MEM_WRITE;
+                        end else begin
+                            memAddr <= (ir == 8'hBD || ir == 8'h9D) ? ({mem_rdata, ea[7:0]} + x) : ({mem_rdata, ea[7:0]});
+                            state <= STATE_MEM_READ;
+                        end
                     end
                 end
 
                 STATE_IND_Y1: begin
-                    mem_req <= 1; mem_rw <= 0; mem_addr <= {8'h00, ea[7:0]};
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 0;
+                        mem_addr <= {8'h00, ea[7:0]};
+                    end
                     if (mem_ready) begin
-                        t1 <= mem_rdata;
                         mem_req <= 0;
+                        t1 <= mem_rdata;
                         ea[7:0] <= ea[7:0] + 1;
                         state <= STATE_IND_Y2;
                     end
                 end
 
                 STATE_IND_Y2: begin
-                    mem_req <= 1; mem_rw <= 0; mem_addr <= {8'h00, ea[7:0]};
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 0;
+                        mem_addr <= {8'h00, ea[7:0]};
+                    end
                     if (mem_ready) begin
-                        ea <= {mem_rdata, t1} + y;
                         mem_req <= 0;
+                        ea <= {mem_rdata, t1} + y;
+                        memAddr <= {mem_rdata, t1} + y;
                         if (ir == 8'h91) state <= STATE_MEM_WRITE;
                         else state <= STATE_MEM_READ;
                     end
                 end
 
                 STATE_MEM_READ: begin
-                    mem_req <= 1; mem_rw <= 0; mem_addr <= ea;
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 0;
+                        mem_addr <= memAddr;
+                    end
                     if (mem_ready) begin
-                        ea[7:0] <= mem_rdata; // reuse ea for read data
                         mem_req <= 0;
+                        mdr <= mem_rdata;
                         state <= STATE_EXECUTE;
                     end
                 end
                 
                 STATE_MEM_WRITE: begin
-                    mem_req <= 1; mem_rw <= 1; mem_addr <= ea;
-                    if (ir == 8'h8D || ir == 8'h9D || ir == 8'h91) mem_wdata <= a;
-                    else if (ir == 8'h8E) mem_wdata <= x;
-                    else if (ir == 8'h8C) mem_wdata <= y;
-                    
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 1;
+                        mem_addr <= memAddr;
+                        if (ir == 8'h8D || ir == 8'h9D || ir == 8'h91) mem_wdata <= a;
+                        else if (ir == 8'h8E) mem_wdata <= x;
+                        else if (ir == 8'h8C) mem_wdata <= y;
+                    end
                     if (mem_ready) begin
                         mem_req <= 0;
                         mem_rw <= 0;
@@ -184,22 +220,25 @@ module ocpu_core (
 
                 STATE_EXECUTE: begin
                     case (ir)
-                        8'hA9, 8'hAD, 8'hBD, 8'hB1: begin a <= ea[7:0]; sr[1] <= (ea[7:0]==0); sr[7] <= ea[7]; end // lda
-                        8'hA2, 8'hAE: begin x <= ea[7:0]; sr[1] <= (ea[7:0]==0); sr[7] <= ea[7]; end // ldx
-                        8'hA0, 8'hAC: begin y <= ea[7:0]; sr[1] <= (ea[7:0]==0); sr[7] <= ea[7]; end // ldy
+                        8'hA9: begin a <= ea[7:0]; sr[1] <= (ea[7:0]==0); sr[7] <= ea[7]; end // lda #
+                        8'hAD, 8'hBD, 8'hB1: begin a <= mdr; sr[1] <= (mdr==0); sr[7] <= mdr[7]; end // lda abs / abs,x / ind,y
+                        8'hA2: begin x <= ea[7:0]; sr[1] <= (ea[7:0]==0); sr[7] <= ea[7]; end // ldx #
+                        8'hAE: begin x <= mdr; sr[1] <= (mdr==0); sr[7] <= mdr[7]; end // ldx abs
+                        8'hA0: begin y <= ea[7:0]; sr[1] <= (ea[7:0]==0); sr[7] <= ea[7]; end // ldy #
+                        8'hAC: begin y <= mdr; sr[1] <= (mdr==0); sr[7] <= mdr[7]; end // ldy abs
                         8'h6D: begin // adc
-                            {sr[0], a} <= a + ea[7:0] + sr[0];
-                            sr[1] <= (a + ea[7:0] + sr[0] == 0);
+                            {sr[0], a} <= a + mdr + sr[0];
+                            sr[1] <= (a + mdr + sr[0] == 0);
                             sr[7] <= a[7];
                         end
                         8'hED: begin // sbc
-                            {sr[0], a} <= a - ea[7:0] - ~sr[0]; // simple inverted carry sub
-                            sr[1] <= (a - ea[7:0] - ~sr[0] == 0);
+                            {sr[0], a} <= a - mdr - ~sr[0]; // simple inverted carry sub
+                            sr[1] <= (a - mdr - ~sr[0] == 0);
                             sr[7] <= a[7];
                         end
-                        8'h2D: begin a <= a & ea[7:0]; sr[1] <= ((a & ea[7:0])==0); sr[7] <= a[7]; end // and
-                        8'h4D: begin a <= a ^ ea[7:0]; sr[1] <= ((a ^ ea[7:0])==0); sr[7] <= a[7]; end // eor
-                        8'h0D: begin a <= a | ea[7:0]; sr[1] <= ((a | ea[7:0])==0); sr[7] <= a[7]; end // ora
+                        8'h2D: begin a <= a & mdr; sr[1] <= ((a & mdr)==0); sr[7] <= a[7]; end // and
+                        8'h4D: begin a <= a ^ mdr; sr[1] <= ((a ^ mdr)==0); sr[7] <= a[7]; end // eor
+                        8'h0D: begin a <= a | mdr; sr[1] <= ((a | mdr)==0); sr[7] <= a[7]; end // ora
                         8'h0A: begin sr[0] <= a[7]; a <= {a[6:0], 1'b0}; sr[1] <= (a[6:0]==0); sr[7] <= a[6]; end // asl
                         8'h4A: begin sr[0] <= a[0]; a <= {1'b0, a[7:1]}; sr[1] <= (a[7:1]==0); sr[7] <= 0; end // lsr
                         8'hE8: begin x <= x + 1; sr[1] <= (x+1==0); sr[7] <= x[7]; end // inx
@@ -243,7 +282,12 @@ module ocpu_core (
                 end
 
                 STATE_PUSH: begin
-                    mem_req <= 1; mem_rw <= 1; mem_addr <= {8'h01, sp}; mem_wdata <= t1;
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 1;
+                        mem_addr <= {8'h01, sp};
+                        mem_wdata <= t1;
+                    end
                     if (mem_ready) begin
                         sp <= sp - 1;
                         mem_req <= 0;
@@ -260,7 +304,11 @@ module ocpu_core (
                 end
                 
                 STATE_POP: begin
-                    mem_req <= 1; mem_rw <= 0; mem_addr <= {8'h01, sp + 8'd1};
+                    if (!mem_req) begin
+                        mem_req <= 1;
+                        mem_rw <= 0;
+                        mem_addr <= {8'h01, sp + 8'd1};
+                    end
                     if (mem_ready) begin
                         sp <= sp + 1;
                         mem_req <= 0;
@@ -269,6 +317,7 @@ module ocpu_core (
                             state <= STATE_FETCH;
                         end else if (ir == 8'h60 && t1 == 0) begin
                             t1 <= mem_rdata; // popped pc_l
+                            state <= STATE_POP;
                         end else if (ir == 8'h60) begin
                             pc <= {mem_rdata, t1} + 1; // popped pc_h, return address + 1
                             state <= STATE_FETCH;
@@ -279,6 +328,7 @@ module ocpu_core (
                 STATE_HALTED: begin
                     if (run_enable) state <= STATE_FETCH;
                 end
+
                 default: begin
                     state <= STATE_FETCH;
                 end

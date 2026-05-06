@@ -8,9 +8,9 @@ module spi_memory (
     input  wire        req,
     input  wire        rw,        // 0 = read, 1 = write
     input  wire [23:0] addr,      // 8-bit bank + 16-bit address
-    input  wire [7:0]  wdata,
+    input  wire [5:0]  wdata,
     output reg         ready,
-    output reg  [7:0]  rdata,
+    output reg  [5:0]  rdata,
     
     // external spi pins
     output reg         sck,
@@ -70,17 +70,18 @@ module spi_memory (
                     end else begin
                         sck <= 0;
                         // set up next mosi bit on falling edge
-                        if (bit_count < 62) begin
+                        // mosi shifts for all 32 cmd+addr bits before the data phase.
+                        if (bit_count < 64) begin
                             shift_out <= {shift_out[30:0], 1'b0};
-                        end else if (bit_count == 62 && is_write_cmd) begin
-                            // cmd/addr sent, load write data to output
-                            shift_out <= {wdata, 24'b0};
-                        end else if (bit_count >= 64 && is_write_cmd) begin
+                        end else if (bit_count == 64 && is_write_cmd) begin
+                            // cmd/addr sent, load write data to output appending 2 bits to top
+                            shift_out <= {2'b00, wdata, 24'b0};
+                        end else if (bit_count > 64 && is_write_cmd) begin
                             shift_out <= {shift_out[30:0], 1'b0};
                         end
                         bit_count <= bit_count + 2;
                         
-                        // finish when all 40 bits (cmd + addr + data) are transferred
+                        // read completes after 8 data bits; write needs two more clocks for 8 mosi bits
                         if (bit_count >= 78) begin
                             state <= STATE_DONE;
                         end
@@ -91,7 +92,7 @@ module spi_memory (
                     cs_n <= 1;
                     ready <= 1;
                     if (!is_write_cmd) begin
-                        rdata <= shift_in;
+                        rdata <= shift_in[5:0];
                     end
                     state <= STATE_IDLE;
                 end
