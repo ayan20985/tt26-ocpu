@@ -82,6 +82,24 @@ def main():
             cmd += ["-b", str(buslog_path)]
 
         rc = run_cmd(cmd)
+        expected_fail = expected.get("expect_fail", "0") != "0"
+        if expected_fail:
+            if rc != 0:
+                print(f"xfail {ocpu_path.name}")
+                continue
+            actual = read_kv(out_path)
+            matched = True
+            for key, value in expected.items():
+                if key in {"max_cycles", "load_addr", "stop_pc", "steps", "buslog", "expect_fail"}:
+                    continue
+                if key not in actual or parse_int(actual[key]) != parse_int(value):
+                    matched = False
+                    break
+            if matched:
+                print(f"xpass {ocpu_path.name}")
+            else:
+                print(f"xfail {ocpu_path.name}")
+            continue
         if rc != 0:
             print(f"sim failed for {ocpu_path.name}")
             failures += 1
