@@ -16,10 +16,10 @@ project:
   
   # List your project's source files here. Source files must be in ./src and you must list each source file separately, one per line:
   source_files:
-    - "project.v"
-    - "qspi_memory.v"
-    - "page_controller.v"
     - "iram_regfile.v"
+    - "ocpu_core.v"
+    - "page_controller.v"
+    - "project.v"
     - "spi_memory.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
