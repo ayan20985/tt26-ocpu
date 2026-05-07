@@ -11,6 +11,6 @@ s3:
     lda #$9a
     jmp done
 
-    .org $00f0
+    .org $0100
 done:
     jmp done

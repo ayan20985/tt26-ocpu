@@ -4,6 +4,6 @@
     dex
     jmp done
 
-    .org $00f0
+    .org $0100
 done:
     jmp done

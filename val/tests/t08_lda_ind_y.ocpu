@@ -1,7 +1,7 @@
     ; create pointer at zp $10 -> points to $0030
-    lda #$20
+    lda #$2b
     sta $0010
-    lda #$03
+    lda #$00
     sta $0011
     ldy #$05
     lda ($10),y
@@ -10,6 +10,6 @@
     .org $0030
     .byte $55
 
-    .org $00f0
+    .org $0100
 done:
     jmp done

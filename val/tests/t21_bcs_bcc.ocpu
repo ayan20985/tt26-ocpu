@@ -11,6 +11,6 @@ have_carry:
     lda #$03
     jmp done
 
-    .org $00f0
+    .org $0100
 done:
     jmp done

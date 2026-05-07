@@ -1,7 +1,6 @@
 load_addr=0x0000
 max_cycles=1000
-stop_pc=0x00f0
-expect_fail=1
+stop_pc=0x0100
 core.a=0x01
 core.x=0x00
 core.y=0x00
