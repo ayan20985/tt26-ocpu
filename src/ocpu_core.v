@@ -126,7 +126,6 @@ module ocpu_core (
 	localparam [4:0] ST_HALTED = 5'd12;
 	reg [4:0] state;
 	assign iram_rd_slot = pc;
-	assign out_pc = pc;
 	assign is_halted = (state == ST_HALTED) || (state == ST_PAGE_REQ) || (state == ST_PAGE_WAIT)
 	                || (state == ST_MEM_READ) || (state == ST_MEM_WRITE)
 	                || (state == ST_IND_Y1)   || (state == ST_IND_Y2);
@@ -189,8 +188,6 @@ module ocpu_core (
 			y <= 8'h00;
 			sp <= 8'hff;
 			sr <= 8'h00;
-			page_req <= 0;
-			page_next <= 8'h00;
 			mem_req <= 0;
 			mem_rw <= 0;
 			mem_addr <= 16'h0000;
@@ -213,14 +210,11 @@ module ocpu_core (
 			page_interrupt_r <= 0;
 			case (state)
 				ST_RESET: begin
-					page_next <= 8'h00;
-					page_req <= 1;
 					wrap_pending <= 0;
 					state <= ST_PAGE_REQ;
 				end
 				ST_PAGE_REQ:
 					if (page_loading) begin
-						page_req <= 0;
 						state <= ST_PAGE_WAIT;
 					end
 				ST_PAGE_WAIT:
@@ -236,8 +230,6 @@ module ocpu_core (
 						// previous slot-15 instruction returned here without passing through ST_EXECUTE
 						wrap_pending <= 0;
 						page_interrupt_r <= 1;
-						page_req <= 1;
-						page_next <= page_reg + 1;
 						state <= ST_PAGE_REQ;
 					end else begin
 						ir_op <= iram_rd_data[15:12];
@@ -432,8 +424,7 @@ module ocpu_core (
 					if (wrap_pending) begin
 						wrap_pending <= 0;
 						page_interrupt_r <= 1;
-						page_req <= 1;
-						page_next <= page_reg + 1;
+
 						state <= ST_PAGE_REQ;
 					end else
 						state <= ST_FETCH;
@@ -471,11 +462,8 @@ module ocpu_core (
 						OP_JSR: if (!wrap_pending) pc <= ir_imm[3:0];
 						OP_RTS:
 							;
-						OP_FARJMP: begin
-							page_next <= (ir_sub[3] ? ir_imm : page_reg + ir_imm);
-							page_req <= 1;
+						OP_FARJMP:
 							state <= ST_PAGE_REQ;
-						end
 						OP_REG:
 							case (ir_sub)
 								REG_TAX: begin

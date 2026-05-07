@@ -140,8 +140,6 @@ module tt_um_ocpu (
     // FPGA responds by asserting page_loading (ack) then page_done (complete).
     // page_interrupt is a 1-cycle pulse from CPU after slot-15 finishes executing.
     // -------------------------------------------------------------------------
-    wire        page_req;        // from CPU: requesting new page load
-    wire [7:0]  page_next;       // from CPU: page number to load
     wire [7:0]  page_reg;        // from CPU: current page register value
     wire        page_interrupt;  // from CPU: slot-15 instruction just finished
 
@@ -207,8 +205,6 @@ module tt_um_ocpu (
         .run_enable    (1'b1),
         .is_halted     (is_halted),
         // page handshake
-        .page_req      (page_req),
-        .page_next     (page_next),
         .page_done     (page_done),
         .page_loading  (page_loading),
         .page_interrupt(page_interrupt),
@@ -227,22 +223,8 @@ module tt_um_ocpu (
         .mem_ready     (cpu_mem_ready),
         .mem_rdata     (cpu_mem_rdata),
         // page register (read-only output, CPU owns this)
-        .page_reg      (page_reg),
-`ifdef OCPU_SIM
-        .dbg_a         (dbg_a),
-        .dbg_x         (dbg_x),
-        .dbg_y         (dbg_y),
-        .dbg_sp        (dbg_sp),
-        .dbg_sr        (dbg_sr),
-        .dbg_ir        (dbg_ir),
-        .dbg_pc        (dbg_pc),
-`endif
-        .out_pc        ()
+        .page_reg      (page_reg)
     );
-
-`ifdef OCPU_SIM
-    assign dbg_page = page_reg;
-`endif
 
     // -------------------------------------------------------------------------
     // OSPI read mux
