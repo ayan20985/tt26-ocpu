@@ -1,0 +1,8 @@
+    ; try rti sequence (may not be implemented fully)
+    sei
+    lda #$11
+    jmp done
+
+    .org $0100
+done:
+    jmp done

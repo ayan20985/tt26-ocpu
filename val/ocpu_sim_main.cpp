@@ -16,7 +16,7 @@ double sc_time_stamp() {
 }
 
 static void print_usage(const char *argv0) {
-    std::printf("usage: %s -m <file.mach> -o <file.out> [-c cycles] [-a load_addr] [-p stop_pc]\n", argv0);
+    std::printf("usage: %s -m <file.mach> -o <file.out> [-c cycles] [-a load_addr] [-p stop_pc] [-s file.outsteps] [-b file.buslog]\n", argv0);
 }
 
 static bool parse_u32(const char *text, uint32_t *value) {
@@ -58,6 +58,8 @@ int main(int argc, char **argv) {
 
     const char *mach_path = nullptr;
     const char *out_path = nullptr;
+    const char *steps_path = nullptr;
+    const char *buslog_path = nullptr;
     uint64_t max_cycles = 100000;
     uint32_t load_addr = 0;
     uint32_t stop_pc = 0xffffffffu;
@@ -79,6 +81,10 @@ int main(int argc, char **argv) {
                 std::fprintf(stderr, "error: invalid stop pc\n");
                 return 1;
             }
+        } else if (std::strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+            steps_path = argv[++i];
+        } else if (std::strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
+            buslog_path = argv[++i];
         } else {
             print_usage(argv[0]);
             return 1;
@@ -126,8 +132,60 @@ int main(int argc, char **argv) {
     }
     top->rst_n = 1;
 
+    FILE *steps = nullptr;
+    FILE *buslog = nullptr;
+    if (steps_path) {
+        steps = std::fopen(steps_path, "w");
+        if (!steps) {
+            std::fprintf(stderr, "error: cannot open outsteps file\n");
+            return 1;
+        }
+        std::fprintf(steps, "cycle,pc,ir,a,x,y,sp,sr\n");
+    }
+
+    if (buslog_path) {
+        buslog = std::fopen(buslog_path, "w");
+        if (!buslog) {
+            std::fprintf(stderr, "error: cannot open buslog file\n");
+            return 1;
+        }
+        std::fprintf(buslog, "cycle,addr,data\n");
+    }
+
+    uint8_t prev_cs_n = 1;
+
     while (cycles < max_cycles) {
         tick(top, &emu, &cycles);
+        if (buslog) {
+            uint8_t cs_n = static_cast<uint8_t>((top->uo_out >> 1) & 0x01);
+            if (prev_cs_n == 0 && cs_n == 1) {
+                uint32_t addr = 0;
+                uint8_t data = 0;
+                spi_emu_capture_after_cmd_addr(&emu, &addr, &data);
+                std::fprintf(
+                    buslog,
+                    "%llu,0x%06x,0x%02x\n",
+                    static_cast<unsigned long long>(cycles),
+                    static_cast<unsigned>(addr),
+                    static_cast<unsigned>(data)
+                );
+            }
+            prev_cs_n = cs_n;
+        }
+        if (steps) {
+            std::fprintf(
+                steps,
+                "%llu,0x%04x,0x%02x,0x%02x,0x%02x,0x%02x,0x%02x,0x%02x\n",
+                static_cast<unsigned long long>(cycles),
+                static_cast<unsigned>(top->dbg_pc),
+                static_cast<unsigned>(top->dbg_ir),
+                static_cast<unsigned>(top->dbg_a),
+                static_cast<unsigned>(top->dbg_x),
+                static_cast<unsigned>(top->dbg_y),
+                static_cast<unsigned>(top->dbg_sp),
+                static_cast<unsigned>(top->dbg_sr)
+            );
+        }
         if (stop_pc != 0xffffffffu) {
             if (static_cast<uint32_t>(top->dbg_pc) == stop_pc) {
                 break;
@@ -154,6 +212,12 @@ int main(int argc, char **argv) {
     std::fprintf(out, "cycles=%llu\n", static_cast<unsigned long long>(cycles));
 
     std::fclose(out);
+    if (steps) {
+        std::fclose(steps);
+    }
+    if (buslog) {
+        std::fclose(buslog);
+    }
 
     top->final();
     delete top;

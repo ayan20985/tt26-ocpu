@@ -19,6 +19,17 @@ void spi_emu_init(spi_emu_t *emu, uint8_t *mem, size_t mem_size) {
     emu->mem = mem;
     emu->mem_size = mem_size;
     emu->prev_cs = 1;
+    emu->last_addr = 0;
+    emu->last_data_out = 0;
+    emu->last_is_write = 0;
+}
+
+void spi_emu_capture_after_cmd_addr(const spi_emu_t *emu, uint32_t *addr_out, uint8_t *data_out_sample) {
+    if (!emu || !addr_out || !data_out_sample) {
+        return;
+    }
+    *addr_out = emu->last_addr;
+    *data_out_sample = emu->last_data_out;
 }
 
 uint8_t spi_emu_step(spi_emu_t *emu, uint8_t cs_n, uint8_t sck, uint8_t mosi) {
@@ -53,6 +64,9 @@ uint8_t spi_emu_step(spi_emu_t *emu, uint8_t cs_n, uint8_t sck, uint8_t mosi) {
             emu->addr = emu->cmd_addr & 0xffffff;
             emu->is_write = (cmd == 0x02);
             emu->data_out = spi_emu_read(emu, emu->addr);
+            emu->last_addr = emu->addr;
+            emu->last_data_out = emu->data_out;
+            emu->last_is_write = emu->is_write;
         }
 
         if (emu->bit_index == 40 && emu->is_write) {

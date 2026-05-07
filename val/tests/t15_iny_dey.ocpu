@@ -1,0 +1,9 @@
+    ldy #$00
+    dey
+    iny
+    iny
+    jmp done
+
+    .org $0100
+done:
+    jmp done

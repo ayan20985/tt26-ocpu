@@ -1,0 +1,9 @@
+load_addr=0x0000
+max_cycles=2000
+stop_pc=0x0100
+core.a=0x3f
+core.x=0x00
+core.y=0x00
+core.sp=0x3f
+core.sr=0x01
+buslog=0

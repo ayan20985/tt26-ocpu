@@ -1,0 +1,11 @@
+load_addr=0x0000
+max_cycles=2000
+stop_pc=0x0100
+# expected behavior depends on implementation of sbc; mark expected-fail if simulator not matching
+expect_fail=1
+core.a=0x00
+core.x=0x00
+core.y=0x00
+core.sp=0x3f
+core.sr=0x00
+buslog=0

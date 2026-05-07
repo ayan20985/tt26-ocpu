@@ -1,0 +1,10 @@
+    ; read and write near top of memory
+    lda #$0f
+    sta $ff00
+    lda #$00
+    lda $ff00
+    jmp done
+
+    .org $0100
+done:
+    jmp done

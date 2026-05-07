@@ -1,0 +1,8 @@
+    sec
+    clc
+    sec
+    jmp done
+
+    .org $0100
+done:
+    jmp done

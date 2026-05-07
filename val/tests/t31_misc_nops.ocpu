@@ -1,0 +1,9 @@
+    ; sequence of nops or simple ops to exercise PC flow
+    lda #$07
+    lda #$08
+    lda #$09
+    jmp done
+
+    .org $0100
+done:
+    jmp done

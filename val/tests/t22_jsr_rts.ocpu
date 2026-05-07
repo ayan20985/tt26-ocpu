@@ -1,0 +1,10 @@
+    jsr sub
+    lda #$00
+    jmp done
+sub:
+    lda #$2b
+    rts
+
+    .org $0100
+done:
+    jmp done

@@ -1,0 +1,10 @@
+    ; store 0x30 to memory, load 0x0f into A, AND with memory -> 0x00, zero flag set
+    lda #$30
+    sta $0200
+    lda #$0f
+    and $0200
+    jmp done
+
+    .org $0100
+done:
+    jmp done

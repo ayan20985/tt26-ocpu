@@ -1,0 +1,16 @@
+    lda #$00
+    beq s1
+    lda #$01
+s1:
+    beq s2
+    lda #$02
+s2:
+    beq s3
+    lda #$03
+s3:
+    lda #$9a
+    jmp done
+
+    .org $0100
+done:
+    jmp done

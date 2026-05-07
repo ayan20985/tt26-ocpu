@@ -1,0 +1,14 @@
+    ; test indirect jmp using vector at $00f8
+    lda #$44
+    sta $00f8
+    lda #$00
+    sta $00f9
+    jmp ($00f8)
+
+    .org $0044
+    lda #$55
+    jmp done
+
+    .org $0100
+done:
+    jmp done

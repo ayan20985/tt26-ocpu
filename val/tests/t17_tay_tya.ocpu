@@ -1,0 +1,8 @@
+    lda #$2a
+    tay
+    tya
+    jmp done
+
+    .org $0100
+done:
+    jmp done

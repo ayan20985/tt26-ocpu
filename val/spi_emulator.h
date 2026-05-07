@@ -19,11 +19,17 @@ typedef struct spi_emu_t {
     uint8_t data_in;
     uint8_t data_out;
     uint32_t addr;
+    uint32_t last_addr;
+    uint8_t last_data_out;
+    uint8_t last_is_write;
     uint8_t is_write;
 } spi_emu_t;
 
 void spi_emu_init(spi_emu_t *emu, uint8_t *mem, size_t mem_size);
 uint8_t spi_emu_step(spi_emu_t *emu, uint8_t cs_n, uint8_t sck, uint8_t mosi);
+
+// returns the last decoded address and data byte from the cmd+addr phase
+void spi_emu_capture_after_cmd_addr(const spi_emu_t *emu, uint32_t *addr_out, uint8_t *data_out_sample);
 
 #ifdef __cplusplus
 }

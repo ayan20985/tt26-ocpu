@@ -1,0 +1,8 @@
+    ; intentionally underflow stack (many pla without pha)
+    pla
+    pla
+    jmp done
+
+    .org $0100
+done:
+    jmp done

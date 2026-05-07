@@ -1,0 +1,11 @@
+    ; write to multiple locations and verify last write
+    lda #$11
+    sta $0700
+    lda #$22
+    sta $0701
+    lda $0701
+    jmp done
+
+    .org $0100
+done:
+    jmp done

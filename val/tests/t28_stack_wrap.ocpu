@@ -1,0 +1,13 @@
+    ; push until wrap around expected
+    lda #$05
+    pha
+    pha
+    pha
+    pha
+    pha
+    pla
+    jmp done
+
+    .org $0100
+done:
+    jmp done

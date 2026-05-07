@@ -4,48 +4,48 @@ import sys
 from pathlib import Path
 
 OPCODES = {
-    ("lda", "imm"): 0xA9,
-    ("lda", "abs"): 0xAD,
-    ("lda", "abs_x"): 0xBD,
-    ("lda", "ind_y"): 0xB1,
-    ("ldx", "imm"): 0xA2,
-    ("ldx", "abs"): 0xAE,
-    ("ldy", "imm"): 0xA0,
-    ("ldy", "abs"): 0xAC,
-    ("sta", "abs"): 0x8D,
-    ("sta", "abs_x"): 0x9D,
-    ("sta", "ind_y"): 0x91,
-    ("stx", "abs"): 0x8E,
-    ("sty", "abs"): 0x8C,
-    ("adc", "abs"): 0x6D,
-    ("sbc", "abs"): 0xED,
-    ("and", "abs"): 0x2D,
-    ("eor", "abs"): 0x4D,
-    ("ora", "abs"): 0x0D,
-    ("asl", "imp"): 0x0A,
-    ("lsr", "imp"): 0x4A,
-    ("inx", "imp"): 0xE8,
-    ("dex", "imp"): 0xCA,
-    ("iny", "imp"): 0xC8,
-    ("dey", "imp"): 0x88,
-    ("tax", "imp"): 0xAA,
-    ("txa", "imp"): 0x8A,
-    ("tay", "imp"): 0xA8,
-    ("tya", "imp"): 0x98,
-    ("sec", "imp"): 0x38,
-    ("clc", "imp"): 0x18,
-    ("sei", "imp"): 0x78,
-    ("cli", "imp"): 0x58,
-    ("jmp", "abs"): 0x4C,
-    ("jsr", "abs"): 0x20,
-    ("rts", "imp"): 0x60,
-    ("rti", "imp"): 0x40,
-    ("pha", "imp"): 0x48,
-    ("pla", "imp"): 0x68,
-    ("beq", "rel"): 0xF0,
-    ("bne", "rel"): 0xD0,
-    ("bcs", "rel"): 0xB0,
-    ("bcc", "rel"): 0x90,
+    ("lda", "imm"): 0x00,
+    ("lda", "abs"): 0x01,
+    ("lda", "abs_x"): 0x02,
+    ("lda", "ind_y"): 0x03,
+    ("ldx", "imm"): 0x04,
+    ("ldx", "abs"): 0x05,
+    ("ldy", "imm"): 0x06,
+    ("ldy", "abs"): 0x07,
+    ("sta", "abs"): 0x08,
+    ("sta", "abs_x"): 0x09,
+    ("sta", "ind_y"): 0x0A,
+    ("stx", "abs"): 0x0B,
+    ("sty", "abs"): 0x0C,
+    ("adc", "abs"): 0x0D,
+    ("sbc", "abs"): 0x0E,
+    ("and", "abs"): 0x0F,
+    ("eor", "abs"): 0x10,
+    ("ora", "abs"): 0x11,
+    ("asl", "imp"): 0x12,
+    ("lsr", "imp"): 0x13,
+    ("inx", "imp"): 0x14,
+    ("dex", "imp"): 0x15,
+    ("iny", "imp"): 0x16,
+    ("dey", "imp"): 0x17,
+    ("tax", "imp"): 0x18,
+    ("txa", "imp"): 0x19,
+    ("tay", "imp"): 0x1A,
+    ("tya", "imp"): 0x1B,
+    ("sec", "imp"): 0x1C,
+    ("clc", "imp"): 0x1D,
+    ("sei", "imp"): 0x1E,
+    ("cli", "imp"): 0x1F,
+    ("jmp", "abs"): 0x20,
+    ("jsr", "abs"): 0x21,
+    ("rts", "imp"): 0x22,
+    ("rti", "imp"): 0x23,
+    ("pha", "imp"): 0x24,
+    ("pla", "imp"): 0x25,
+    ("beq", "rel"): 0x26,
+    ("bne", "rel"): 0x27,
+    ("bcs", "rel"): 0x28,
+    ("bcc", "rel"): 0x29,
 }
 
 
@@ -192,7 +192,7 @@ def second_pass(lines, labels):
             opcode = OPCODES.get((op, "imm"))
             if opcode is None:
                 raise ValueError(f"unsupported immediate form on line: {raw}")
-            value = resolve_operand(operand_text, labels) & 0xff
+            value = resolve_operand(operand_text, labels) & 0x3f
             output.append(opcode)
             output.append(value)
             pc += 2
@@ -200,16 +200,16 @@ def second_pass(lines, labels):
             opcode = OPCODES.get((op, "abs_x"))
             if opcode is None:
                 raise ValueError(f"unsupported abs,x form on line: {raw}")
-            value = resolve_operand(operand_text, labels) & 0xffff
+            value = resolve_operand(operand_text, labels) & 0x0fff
             output.append(opcode)
-            output.append(value & 0xff)
-            output.append((value >> 8) & 0xff)
+            output.append(value & 0x3f)
+            output.append((value >> 6) & 0x3f)
             pc += 3
         elif mode == "ind_y":
             opcode = OPCODES.get((op, "ind_y"))
             if opcode is None:
                 raise ValueError(f"unsupported (addr),y form on line: {raw}")
-            value = resolve_operand(operand_text, labels) & 0xff
+            value = resolve_operand(operand_text, labels) & 0x3f
             output.append(opcode)
             output.append(value)
             pc += 2
@@ -217,10 +217,10 @@ def second_pass(lines, labels):
             opcode = OPCODES.get((op, "abs"))
             if opcode is None:
                 raise ValueError(f"unsupported absolute form on line: {raw}")
-            value = resolve_operand(operand_text, labels) & 0xffff
+            value = resolve_operand(operand_text, labels) & 0x0fff
             output.append(opcode)
-            output.append(value & 0xff)
-            output.append((value >> 8) & 0xff)
+            output.append(value & 0x3f)
+            output.append((value >> 6) & 0x3f)
             pc += 3
     return bytes(output)
 

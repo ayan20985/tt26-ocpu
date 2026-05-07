@@ -1,0 +1,6 @@
+    lda #$00
+    jmp done
+
+    .org $0100
+done:
+    jmp done

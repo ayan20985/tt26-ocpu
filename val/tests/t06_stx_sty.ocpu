@@ -1,0 +1,13 @@
+    ldx #$12
+    ldy #$2a
+    stx $0020
+    sty $0021
+    ldx #$00
+    ldy #$00
+    ldx $0020
+    ldy $0021
+    jmp done
+
+    .org $0100
+done:
+    jmp done

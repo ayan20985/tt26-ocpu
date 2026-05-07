@@ -1,0 +1,9 @@
+    ; final quick checks
+    lda #$07
+    ldx #$07
+    ldy #$07
+    jmp done
+
+    .org $0100
+done:
+    jmp done

@@ -1,0 +1,10 @@
+    lda #$3f
+    sta $0050
+    lda #$3f
+    sec
+    adc $0050
+    jmp done
+
+    .org $0100
+done:
+    jmp done

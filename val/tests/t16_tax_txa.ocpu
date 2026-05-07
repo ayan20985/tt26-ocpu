@@ -1,0 +1,8 @@
+    lda #$14
+    tax
+    txa
+    jmp done
+
+    .org $0100
+done:
+    jmp done

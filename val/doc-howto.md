@@ -17,6 +17,7 @@ use key=value lines. keys are compared against the .out file.
 - max_cycles sets an upper bound for the run
 - stop_pc stops when core pc matches the value
 - the core is single-core, so use core.* keys for register checks
+- steps=1 enables a cycle-by-cycle trace in a .outsteps file
 
 example:
 core.a=0x07
