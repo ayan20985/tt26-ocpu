@@ -495,22 +495,22 @@ module ocpu_core (
 								REG_INX: begin
 									x <= x + 1;
 									sr[1] <= x == 8'hff;
-									sr[2] <= x + 1[7];
+									sr[2] <= x[7] ^ (x == 8'h7f) ^ (x == 8'hff);
 								end
 								REG_DEX: begin
 									x <= x - 1;
 									sr[1] <= x == 8'h01;
-									sr[2] <= x - 1[7];
+									sr[2] <= x[7] ^ (x == 8'h00) ^ (x == 8'h80);
 								end
 								REG_INY: begin
 									y <= y + 1;
 									sr[1] <= y == 8'hff;
-									sr[2] <= y + 1[7];
+									sr[2] <= y[7] ^ (y == 8'h7f) ^ (y == 8'hff);
 								end
 								REG_DEY: begin
 									y <= y - 1;
 									sr[1] <= y == 8'h01;
-									sr[2] <= y - 1[7];
+									sr[2] <= y[7] ^ (y == 8'h00) ^ (y == 8'h80);
 								end
 								REG_TSX: x <= sp;
 								REG_TXS: sp <= x;
