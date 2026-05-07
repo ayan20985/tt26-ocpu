@@ -1,6 +1,6 @@
 `default_nettype none
 
-// minimal top for spi-only area experiments; full design lives in old-src/project_full.v
+// minimal top for qspi-only area experiments; full design lives in old-src/project_full.v
 module tt_um_ocpu (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
@@ -12,42 +12,44 @@ module tt_um_ocpu (
     input  wire       rst_n
 );
 
-    wire       spiReady;
-    wire [5:0] spiRdata;
-    wire       spiSck;
-    wire       spiCsN;
-    wire       spiMosi;
-    wire       spiMiso;
+    wire       qspiReady;
+    wire [5:0] qspiRdata;
+    wire       qspiSck;
+    wire       qspiCsN;
+    wire [3:0] qspiIoO;
+    wire [3:0] qspiIoI;
+    wire [3:0] qspiIoOe;
 
-    assign spiMiso = ui_in[0];
+    assign qspiIoI = ui_in[3:0];
 
     (* keep_hierarchy *)
-    spi_memory uSpi (
+    qspi_memory uQspi (
         .clk(clk),
         .rst_n(rst_n),
         .req(1'b0),
         .rw(1'b0),
         .addr(24'b0),
         .wdata(6'b0),
-        .ready(spiReady),
-        .rdata(spiRdata),
-        .sck(spiSck),
-        .cs_n(spiCsN),
-        .mosi(spiMosi),
-        .miso(spiMiso)
+        .ready(qspiReady),
+        .rdata(qspiRdata),
+        .sck(qspiSck),
+        .cs_n(qspiCsN),
+        .io_o(qspiIoO),
+        .io_i(qspiIoI),
+        .io_oe(qspiIoOe)
     );
 
-    wire foldCtl = ^{spiSck, spiCsN, spiMosi, spiMiso};
-    wire foldMeta = ^{spiReady, spiRdata};
+    wire foldCtl = ^{qspiSck, qspiCsN, qspiIoO, qspiIoOe};
+    wire foldMeta = ^{qspiReady, qspiRdata};
 
     assign uo_out[0] = foldCtl;
     assign uo_out[1] = foldMeta ^ foldCtl;
-    assign uo_out[2] = spiMosi ^ spiSck;
-    assign uo_out[3] = spiCsN ^ spiMiso;
-    assign uo_out[4] = spiSck;
-    assign uo_out[5] = spiCsN;
+    assign uo_out[2] = qspiIoO[0] ^ qspiIoO[2];
+    assign uo_out[3] = qspiIoO[1] ^ qspiIoO[3];
+    assign uo_out[4] = qspiSck;
+    assign uo_out[5] = qspiCsN;
     assign uo_out[6] = foldMeta;
-    assign uo_out[7] = ena ^ ^{ui_in[7:1], uio_in};
+    assign uo_out[7] = ena ^ ^{ui_in[7:4], uio_in};
 
     assign uio_out = 8'b0;
     assign uio_oe  = 8'b0;
