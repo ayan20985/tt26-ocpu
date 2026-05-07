@@ -40,6 +40,7 @@ module ocpu_core (
     reg [5:0]  mdr;
     reg [15:0] memAddr;
     reg [5:0] t1;
+    reg       jsr_phase;
 
     localparam STATE_RESET     = 5'd0,
                STATE_FETCH     = 5'd1,
@@ -117,9 +118,9 @@ module ocpu_core (
             state <= STATE_RESET;
             a <= 0; x <= 0; y <= 0;
             sp <= 6'h3F; pc <= 16'h0000;
-            sr <= 6'h20; ir <= 0;
+            sr <= 6'h00; ir <= 0;
             mem_req <= 0; mem_rw <= 0;
-            ea <= 0; mdr <= 0; memAddr <= 0; t1 <= 0;
+            ea <= 0; mdr <= 0; memAddr <= 0; t1 <= 0; jsr_phase <= 0;
         end else if (force_pc_en) begin
             pc <= force_pc_val;
             state <= STATE_FETCH;
@@ -260,37 +261,35 @@ module ocpu_core (
 
                 STATE_EXECUTE: begin
                     case (ir)
-                        OP_LDA_IMM: begin a <= ea[5:0]; sr[1] <= (ea[5:0]==0); sr[5] <= ea[5]; end                      // lda #
-                        OP_LDA_ABS, OP_LDA_ABS_X, OP_LDA_IND_Y: begin a <= mdr; sr[1] <= (mdr==0); sr[5] <= mdr[5]; end // lda abs / abs,x / ind,y
-                        OP_LDX_IMM: begin x <= ea[5:0]; sr[1] <= (ea[5:0]==0); sr[5] <= ea[5]; end                      // ldx #
-                        OP_LDX_ABS: begin x <= mdr; sr[1] <= (mdr==0); sr[5] <= mdr[5]; end                             // ldx abs
-                        OP_LDY_IMM: begin y <= ea[5:0]; sr[1] <= (ea[5:0]==0); sr[5] <= ea[5]; end                      // ldy #
-                        OP_LDY_ABS: begin y <= mdr; sr[1] <= (mdr==0); sr[5] <= mdr[5]; end                                 // ldy abs
+                        OP_LDA_IMM: begin a <= ea[5:0]; sr[1] <= (ea[5:0]==0); end                      // lda #
+                        OP_LDA_ABS, OP_LDA_ABS_X, OP_LDA_IND_Y: begin a <= mdr; sr[1] <= (mdr==0); end // lda abs / abs,x / ind,y
+                        OP_LDX_IMM: begin x <= ea[5:0]; sr[1] <= (ea[5:0]==0); end                      // ldx #
+                        OP_LDX_ABS: begin x <= mdr; sr[1] <= (mdr==0); end                              // ldx abs
+                        OP_LDY_IMM: begin y <= ea[5:0]; sr[1] <= (ea[5:0]==0); end                      // ldy #
+                        OP_LDY_ABS: begin y <= mdr; sr[1] <= (mdr==0); end                              // ldy abs
                         OP_ADC_ABS: begin // adc
                             automatic logic [6:0] adc_result = a + mdr + sr[0];
                             {sr[0], a} <= adc_result;
                             sr[1] <= (adc_result[5:0] == 0);
-                            sr[5] <= adc_result[5];
                         end
                         OP_SBC_ABS: begin // sbc
                             automatic logic [6:0] sbc_result = a - mdr - ~sr[0];
                             {sr[0], a} <= sbc_result;
                             sr[1] <= (sbc_result[5:0] == 0);
-                            sr[5] <= sbc_result[5];
                         end
-                        OP_AND_ABS: begin automatic logic [5:0] and_result = a & mdr; a <= and_result; sr[1] <= (and_result==0); sr[5] <= and_result[5]; end // and
-                        OP_EOR_ABS: begin automatic logic [5:0] eor_result = a ^ mdr; a <= eor_result; sr[1] <= (eor_result==0); sr[5] <= eor_result[5]; end // eor
-                        OP_ORA_ABS: begin automatic logic [5:0] ora_result = a | mdr; a <= ora_result; sr[1] <= (ora_result==0); sr[5] <= ora_result[5]; end // ora
-                        OP_ASL: begin automatic logic [5:0] asl_result = {a[4:0], 1'b0}; sr[0] <= a[5]; a <= asl_result; sr[1] <= (asl_result==0); sr[5] <= asl_result[5]; end // asl
-                        OP_LSR: begin automatic logic [5:0] lsr_result = {1'b0, a[5:1]}; sr[0] <= a[0]; a <= lsr_result; sr[1] <= (lsr_result==0); sr[5] <= lsr_result[5]; end // lsr
-                        OP_INX: begin automatic logic [5:0] inx_result = x + 1; x <= inx_result; sr[1] <= (inx_result==0); sr[5] <= inx_result[5]; end // inx
-                        OP_DEX: begin automatic logic [5:0] dex_result = x - 1; x <= dex_result; sr[1] <= (dex_result==0); sr[5] <= dex_result[5]; end // dex
-                        OP_INY: begin automatic logic [5:0] iny_result = y + 1; y <= iny_result; sr[1] <= (iny_result==0); sr[5] <= iny_result[5]; end // iny
-                        OP_DEY: begin automatic logic [5:0] dey_result = y - 1; y <= dey_result; sr[1] <= (dey_result==0); sr[5] <= dey_result[5]; end // dey
-                        OP_TAX: begin x <= a; sr[1] <= (a==0); sr[5] <= a[5]; end // tax
-                        OP_TXA: begin a <= x; sr[1] <= (x==0); sr[5] <= x[5]; end // txa
-                        OP_TAY: begin y <= a; sr[1] <= (a==0); sr[5] <= a[5]; end // tay
-                        OP_TYA: begin a <= y; sr[1] <= (y==0); sr[5] <= y[5]; end // tya
+                        OP_AND_ABS: begin automatic logic [5:0] and_result = a & mdr; a <= and_result; sr[1] <= (and_result==0); end // and
+                        OP_EOR_ABS: begin automatic logic [5:0] eor_result = a ^ mdr; a <= eor_result; sr[1] <= (eor_result==0); end // eor
+                        OP_ORA_ABS: begin automatic logic [5:0] ora_result = a | mdr; a <= ora_result; sr[1] <= (ora_result==0); end // ora
+                        OP_ASL: begin automatic logic [5:0] asl_result = {a[4:0], 1'b0}; sr[0] <= a[5]; a <= asl_result; sr[1] <= (asl_result==0); end // asl
+                        OP_LSR: begin automatic logic [5:0] lsr_result = {1'b0, a[5:1]}; sr[0] <= a[0]; a <= lsr_result; sr[1] <= (lsr_result==0); end // lsr
+                        OP_INX: begin automatic logic [5:0] inx_result = x + 1; x <= inx_result; sr[1] <= (inx_result==0); end // inx
+                        OP_DEX: begin automatic logic [5:0] dex_result = x - 1; x <= dex_result; sr[1] <= (dex_result==0); end // dex
+                        OP_INY: begin automatic logic [5:0] iny_result = y + 1; y <= iny_result; sr[1] <= (iny_result==0); end // iny
+                        OP_DEY: begin automatic logic [5:0] dey_result = y - 1; y <= dey_result; sr[1] <= (dey_result==0); end // dey
+                        OP_TAX: begin x <= a; sr[1] <= (a==0); end // tax
+                        OP_TXA: begin a <= x; sr[1] <= (x==0); end // txa
+                        OP_TAY: begin y <= a; sr[1] <= (a==0); end // tay
+                        OP_TYA: begin a <= y; sr[1] <= (y==0); end // tya
                         OP_SEC: sr[0] <= 1; // sec
                         OP_CLC: sr[0] <= 0; // clc
                         OP_SEI: sr[2] <= 1; // sei
@@ -302,7 +301,8 @@ module ocpu_core (
                         OP_BCC: if (!sr[0]) pc <= pc + {{10{ea[5]}}, ea[5:0]};  // bcc
                         OP_JSR: begin // jsr
                             state <= STATE_PUSH;
-                            t1 <= pc[15:10];
+                            t1 <= (pc - 16'd1) >> 6;   // push high half of (return addr - 1)
+                            jsr_phase <= 0;
                         end
                         OP_RTS: begin // rts
                             state <= STATE_POP;
@@ -328,8 +328,9 @@ module ocpu_core (
                         sp <= sp - 1;
                         mem_req <= 0;
                         mem_rw <= 0;
-                        if (ir == OP_JSR && t1 == pc[15:10]) begin
-                            t1 <= pc[9:4]; // jsr pushes pc_l on next cycle
+                        if (ir == OP_JSR && !jsr_phase) begin
+                            t1 <= (pc - 1) & 6'h3f; // pushed pc_h, now load pc_l
+                            jsr_phase <= 1;
                         end else if (ir == OP_JSR) begin
                             pc <= ea;
                             state <= STATE_FETCH;
@@ -350,6 +351,7 @@ module ocpu_core (
                         mem_req <= 0;
                         if (ir == OP_PLA) begin
                             a <= mem_rdata;
+                            sr[1] <= (mem_rdata == 0);
                             state <= STATE_FETCH;
                         end else if (ir == OP_RTS && t1 == 0) begin
                             t1 <= mem_rdata; // popped pc_l

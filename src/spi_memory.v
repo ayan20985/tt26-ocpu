@@ -77,12 +77,15 @@ module spi_memory (
                         sck <= 0;
                         // set up next mosi bit on falling edge
                         // mosi shifts for all 32 cmd+addr bits before the data phase.
-                        if (bit_count < 64) begin
+                        if (bit_count < 62) begin
                             shift_out <= {shift_out[30:0], 1'b0};
-                        end else if (bit_count == 64 && is_write_cmd) begin
-                            // cmd/addr sent, load write data to output appending 2 bits to top
-                            shift_out <= {2'b00, wdata, 24'b0};
-                        end else if (bit_count > 64 && is_write_cmd) begin
+                        end else if (bit_count == 62) begin
+                            if (is_write_cmd)
+                                // pre-load write data so MOSI is valid at first data rising edge
+                                shift_out <= {2'b00, wdata, 24'b0};
+                            else
+                                shift_out <= {shift_out[30:0], 1'b0};
+                        end else if (bit_count >= 64 && is_write_cmd) begin
                             shift_out <= {shift_out[30:0], 1'b0};
                         end
                         bit_count <= bit_count + 2;

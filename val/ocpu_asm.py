@@ -192,7 +192,7 @@ def second_pass(lines, labels):
             opcode = OPCODES.get((op, "imm"))
             if opcode is None:
                 raise ValueError(f"unsupported immediate form on line: {raw}")
-            value = resolve_operand(operand_text, labels) & 0xff
+            value = resolve_operand(operand_text, labels) & 0x3f
             output.append(opcode)
             output.append(value)
             pc += 2
@@ -200,16 +200,16 @@ def second_pass(lines, labels):
             opcode = OPCODES.get((op, "abs_x"))
             if opcode is None:
                 raise ValueError(f"unsupported abs,x form on line: {raw}")
-            value = resolve_operand(operand_text, labels) & 0xffff
+            value = resolve_operand(operand_text, labels) & 0x0fff
             output.append(opcode)
-            output.append(value & 0xff)
-            output.append((value >> 8) & 0xff)
+            output.append(value & 0x3f)
+            output.append((value >> 6) & 0x3f)
             pc += 3
         elif mode == "ind_y":
             opcode = OPCODES.get((op, "ind_y"))
             if opcode is None:
                 raise ValueError(f"unsupported (addr),y form on line: {raw}")
-            value = resolve_operand(operand_text, labels) & 0xff
+            value = resolve_operand(operand_text, labels) & 0x3f
             output.append(opcode)
             output.append(value)
             pc += 2
@@ -217,10 +217,10 @@ def second_pass(lines, labels):
             opcode = OPCODES.get((op, "abs"))
             if opcode is None:
                 raise ValueError(f"unsupported absolute form on line: {raw}")
-            value = resolve_operand(operand_text, labels) & 0xffff
+            value = resolve_operand(operand_text, labels) & 0x0fff
             output.append(opcode)
-            output.append(value & 0xff)
-            output.append((value >> 8) & 0xff)
+            output.append(value & 0x3f)
+            output.append((value >> 6) & 0x3f)
             pc += 3
     return bytes(output)
 

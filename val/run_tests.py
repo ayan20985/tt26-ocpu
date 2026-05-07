@@ -43,6 +43,7 @@ def main():
         return 1
 
     failures = 0
+    timeouts = 0
     tests = sorted(TESTS_DIR.glob("*.ocpu"))
     if not tests:
         print("no tests found")
@@ -106,6 +107,13 @@ def main():
             continue
 
         actual = read_kv(out_path)
+        if stop_pc is not None:
+            actual_cycles = actual.get("cycles")
+            if actual_cycles is not None and parse_int(actual_cycles) >= parse_int(max_cycles):
+                print(f"timeout {ocpu_path.name} stop_pc={stop_pc} cycles={actual_cycles}")
+                timeouts += 1
+                continue
+
         for key, value in expected.items():
             if key in {"max_cycles", "load_addr", "stop_pc", "steps", "buslog", "expect_fail"}:
                 continue
@@ -120,8 +128,11 @@ def main():
         else:
             print(f"pass {ocpu_path.name}")
 
-    if failures:
-        print(f"failures {failures}")
+    if failures or timeouts:
+        if failures:
+            print(f"failures {failures}")
+        if timeouts:
+            print(f"timeouts {timeouts}")
         return 1
     print("all tests passed")
     return 0

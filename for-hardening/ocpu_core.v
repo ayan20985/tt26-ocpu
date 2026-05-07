@@ -52,6 +52,7 @@ module ocpu_core (
 	reg [5:0] mdr;
 	reg [15:0] memAddr;
 	reg [5:0] t1;
+	reg jsr_phase;
 	localparam STATE_RESET = 5'd0;
 	localparam STATE_FETCH = 5'd1;
 	localparam STATE_DECODE = 5'd2;
@@ -125,7 +126,7 @@ module ocpu_core (
 			y <= 0;
 			sp <= 6'h3f;
 			pc <= 16'h0000;
-			sr <= 6'h20;
+			sr <= 6'h00;
 			ir <= 0;
 			mem_req <= 0;
 			mem_rw <= 0;
@@ -133,6 +134,7 @@ module ocpu_core (
 			mdr <= 0;
 			memAddr <= 0;
 			t1 <= 0;
+			jsr_phase <= 0;
 		end
 		else if (force_pc_en) begin
 			pc <= force_pc_val;
@@ -266,67 +268,56 @@ module ocpu_core (
 						OP_LDA_IMM: begin
 							a <= ea[5:0];
 							sr[1] <= ea[5:0] == 0;
-							sr[5] <= ea[5];
 						end
 						OP_LDA_ABS, OP_LDA_ABS_X, OP_LDA_IND_Y: begin
 							a <= mdr;
 							sr[1] <= mdr == 0;
-							sr[5] <= mdr[5];
 						end
 						OP_LDX_IMM: begin
 							x <= ea[5:0];
 							sr[1] <= ea[5:0] == 0;
-							sr[5] <= ea[5];
 						end
 						OP_LDX_ABS: begin
 							x <= mdr;
 							sr[1] <= mdr == 0;
-							sr[5] <= mdr[5];
 						end
 						OP_LDY_IMM: begin
 							y <= ea[5:0];
 							sr[1] <= ea[5:0] == 0;
-							sr[5] <= ea[5];
 						end
 						OP_LDY_ABS: begin
 							y <= mdr;
 							sr[1] <= mdr == 0;
-							sr[5] <= mdr[5];
 						end
 						OP_ADC_ABS: begin : sv2v_autoblock_1
 							reg [6:0] adc_result;
 							adc_result = (a + mdr) + sr[0];
 							{sr[0], a} <= adc_result;
 							sr[1] <= adc_result[5:0] == 0;
-							sr[5] <= adc_result[5];
 						end
 						OP_SBC_ABS: begin : sv2v_autoblock_2
 							reg [6:0] sbc_result;
 							sbc_result = (a - mdr) - ~sr[0];
 							{sr[0], a} <= sbc_result;
 							sr[1] <= sbc_result[5:0] == 0;
-							sr[5] <= sbc_result[5];
 						end
 						OP_AND_ABS: begin : sv2v_autoblock_3
 							reg [5:0] and_result;
 							and_result = a & mdr;
 							a <= and_result;
 							sr[1] <= and_result == 0;
-							sr[5] <= and_result[5];
 						end
 						OP_EOR_ABS: begin : sv2v_autoblock_4
 							reg [5:0] eor_result;
 							eor_result = a ^ mdr;
 							a <= eor_result;
 							sr[1] <= eor_result == 0;
-							sr[5] <= eor_result[5];
 						end
 						OP_ORA_ABS: begin : sv2v_autoblock_5
 							reg [5:0] ora_result;
 							ora_result = a | mdr;
 							a <= ora_result;
 							sr[1] <= ora_result == 0;
-							sr[5] <= ora_result[5];
 						end
 						OP_ASL: begin : sv2v_autoblock_6
 							reg [5:0] asl_result;
@@ -334,7 +325,6 @@ module ocpu_core (
 							sr[0] <= a[5];
 							a <= asl_result;
 							sr[1] <= asl_result == 0;
-							sr[5] <= asl_result[5];
 						end
 						OP_LSR: begin : sv2v_autoblock_7
 							reg [5:0] lsr_result;
@@ -342,55 +332,46 @@ module ocpu_core (
 							sr[0] <= a[0];
 							a <= lsr_result;
 							sr[1] <= lsr_result == 0;
-							sr[5] <= lsr_result[5];
 						end
 						OP_INX: begin : sv2v_autoblock_8
 							reg [5:0] inx_result;
 							inx_result = x + 1;
 							x <= inx_result;
 							sr[1] <= inx_result == 0;
-							sr[5] <= inx_result[5];
 						end
 						OP_DEX: begin : sv2v_autoblock_9
 							reg [5:0] dex_result;
 							dex_result = x - 1;
 							x <= dex_result;
 							sr[1] <= dex_result == 0;
-							sr[5] <= dex_result[5];
 						end
 						OP_INY: begin : sv2v_autoblock_10
 							reg [5:0] iny_result;
 							iny_result = y + 1;
 							y <= iny_result;
 							sr[1] <= iny_result == 0;
-							sr[5] <= iny_result[5];
 						end
 						OP_DEY: begin : sv2v_autoblock_11
 							reg [5:0] dey_result;
 							dey_result = y - 1;
 							y <= dey_result;
 							sr[1] <= dey_result == 0;
-							sr[5] <= dey_result[5];
 						end
 						OP_TAX: begin
 							x <= a;
 							sr[1] <= a == 0;
-							sr[5] <= a[5];
 						end
 						OP_TXA: begin
 							a <= x;
 							sr[1] <= x == 0;
-							sr[5] <= x[5];
 						end
 						OP_TAY: begin
 							y <= a;
 							sr[1] <= a == 0;
-							sr[5] <= a[5];
 						end
 						OP_TYA: begin
 							a <= y;
 							sr[1] <= y == 0;
-							sr[5] <= y[5];
 						end
 						OP_SEC: sr[0] <= 1;
 						OP_CLC: sr[0] <= 0;
@@ -411,7 +392,8 @@ module ocpu_core (
 								pc <= pc + {{10 {ea[5]}}, ea[5:0]};
 						OP_JSR: begin
 							state <= STATE_PUSH;
-							t1 <= pc[15:10];
+							t1 <= pc[11:6];
+							jsr_phase <= 0;
 						end
 						OP_RTS: begin
 							state <= STATE_POP;
@@ -433,8 +415,10 @@ module ocpu_core (
 						sp <= sp - 1;
 						mem_req <= 0;
 						mem_rw <= 0;
-						if ((ir == OP_JSR) && (t1 == pc[15:10]))
-							t1 <= pc[9:4];
+						if ((ir == OP_JSR) && !jsr_phase) begin
+							t1 <= pc[5:0];
+							jsr_phase <= 1;
+						end
 						else if (ir == OP_JSR) begin
 							pc <= ea;
 							state <= STATE_FETCH;
