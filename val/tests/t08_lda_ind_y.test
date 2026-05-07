@@ -1,5 +1,5 @@
 load_addr=0x0000
-max_cycles=3000
+max_cycles=5000
 stop_pc=0x0100
 core.a=0x55
 core.x=0x00

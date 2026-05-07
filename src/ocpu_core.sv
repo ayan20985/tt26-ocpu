@@ -329,7 +329,7 @@ module ocpu_core (
                         mem_req <= 0;
                         mem_rw <= 0;
                         if (ir == OP_JSR && !jsr_phase) begin
-                            t1 <= (pc - 1) & 6'h3f; // pushed pc_h, now load pc_l
+                            t1 <= (pc - 16'd1) & 16'h003f; // pushed pc_h, now load pc_l
                             jsr_phase <= 1;
                         end else if (ir == OP_JSR) begin
                             pc <= ea;

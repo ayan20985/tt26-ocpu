@@ -392,7 +392,7 @@ module ocpu_core (
 								pc <= pc + {{10 {ea[5]}}, ea[5:0]};
 						OP_JSR: begin
 							state <= STATE_PUSH;
-							t1 <= pc[11:6];
+							t1 <= (pc - 16'd1) >> 6;
 							jsr_phase <= 0;
 						end
 						OP_RTS: begin
@@ -416,7 +416,7 @@ module ocpu_core (
 						mem_req <= 0;
 						mem_rw <= 0;
 						if ((ir == OP_JSR) && !jsr_phase) begin
-							t1 <= pc[5:0];
+							t1 <= (pc - 16'd1) & 16'h003f;
 							jsr_phase <= 1;
 						end
 						else if (ir == OP_JSR) begin
@@ -438,6 +438,7 @@ module ocpu_core (
 						mem_req <= 0;
 						if (ir == OP_PLA) begin
 							a <= mem_rdata;
+							sr[1] <= mem_rdata == 0;
 							state <= STATE_FETCH;
 						end
 						else if ((ir == OP_RTS) && (t1 == 0)) begin
