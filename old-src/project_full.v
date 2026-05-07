@@ -94,7 +94,9 @@ module tt_um_ocpu (
         end
     end
 
-    // gds-only instances: req tied low so fsm stays idle; outputs folded into uo_out so logic is retained.
+    // gds-only instances: req must come from pads so fsms are not constant-folded away.
+    wire       gdsQspiReq = ui_in[6];
+    wire       gdsOspiReq = ui_in[7];
     wire [3:0] gdsQspiIoI;
     wire [7:0] gdsOspiIoI;
     wire       gdsQspiReady;
@@ -118,7 +120,7 @@ module tt_um_ocpu (
     qspi_memory gds_qspi_macron (
         .clk(clk),
         .rst_n(rst_n),
-        .req(1'b0),
+        .req(gdsQspiReq),
         .rw(1'b0),
         .addr(24'b0),
         .wdata(6'b0),
@@ -135,7 +137,7 @@ module tt_um_ocpu (
     ospi_memory gds_ospi_macron (
         .clk(clk),
         .rst_n(rst_n),
-        .req(1'b0),
+        .req(gdsOspiReq),
         .rw(1'b0),
         .addr(24'b0),
         .wdata(6'b0),
@@ -163,7 +165,7 @@ module tt_um_ocpu (
 
     assign uio_out = 8'b0;
     assign uio_oe  = 8'b0;
-    wire _unused_ok = &{ena, ui_in[7:4], uio_in};
+    wire _unused_ok = &{ena, ui_in[5:4], uio_in};
 `ifdef OCPU_SIM
     assign dbg_mmio_bank = mmio_bank;
     assign dbg_oc_cache = oc_cache;

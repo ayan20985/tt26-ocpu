@@ -20,13 +20,18 @@ module tt_um_ocpu (
     wire [3:0] qspiIoI;
     wire [3:0] qspiIoOe;
 
+    // io data nibbles for read phases; keep ui_in[7] low if you do not want bus transactions.
     assign qspiIoI = ui_in[3:0];
+
+    // req must not be a constant 0: otherwise the whole fsm is unreachable and yosys replaces
+    // spi / qspi / ospi with the same constant network (identical gds blobs).
+    wire memReq = ui_in[7];
 
     (* keep_hierarchy *)
     qspi_memory uQspi (
         .clk(clk),
         .rst_n(rst_n),
-        .req(1'b0),
+        .req(memReq),
         .rw(1'b0),
         .addr(24'b0),
         .wdata(6'b0),
@@ -49,7 +54,7 @@ module tt_um_ocpu (
     assign uo_out[4] = qspiSck;
     assign uo_out[5] = qspiCsN;
     assign uo_out[6] = foldMeta;
-    assign uo_out[7] = ena ^ ^{ui_in[7:4], uio_in};
+    assign uo_out[7] = ena ^ ^{ui_in[6:4], uio_in};
 
     assign uio_out = 8'b0;
     assign uio_oe  = 8'b0;
