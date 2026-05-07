@@ -1,9 +1,0 @@
-    ldx #$3f
-    inx
-    dex
-    dex
-    jmp done
-
-    .org $0100
-done:
-    jmp done

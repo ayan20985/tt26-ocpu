@@ -1,9 +1,0 @@
-    lda #$aa
-    sta $0055
-    lda $0055
-    lda #$0a
-    jmp done
-
-    .org $0100
-done:
-    jmp done

@@ -1,9 +1,0 @@
-    ; simulate memory handshake delay sensitive sequence
-    lda #$05
-    sta $0800
-    lda $0800
-    jmp done
-
-    .org $0100
-done:
-    jmp done

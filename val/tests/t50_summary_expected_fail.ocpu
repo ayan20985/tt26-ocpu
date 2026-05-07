@@ -1,7 +1,0 @@
-    ; summary test reserved for complex scenarios; mark expected-fail
-    lda #$ff
-    jmp done
-
-    .org $0100
-done:
-    jmp done

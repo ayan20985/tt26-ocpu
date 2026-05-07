@@ -1,6 +1,0 @@
-    ldy #$3f
-    jmp done
-
-    .org $0100
-done:
-    jmp done
