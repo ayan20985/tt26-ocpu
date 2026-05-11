@@ -63,21 +63,20 @@ module ospi_memory (
             sck_prev <= sck_sync;
     end
 
-    // shift register for incoming OSPI data (32 bits for cmd+addr, 8 bits for data)
-    reg [39:0] shift_in;
+    // shift register for incoming OSPI data: 32 bits for cmd+addr (4 bytes)
+    // data byte (5th byte) is consumed directly from io_i_sync, not shifted in.
+    reg [31:0] shift_in;
     reg [2:0]  byte_count;  // 0-4 for 5 bytes total
     reg [7:0]  shift_out;
     reg [7:0]  read_data;
     reg [7:0]  cmd_byte;
-    wire [23:0] addr_field = shift_in[31:8];
-    wire [7:0]  data_field = shift_in[7:0];
 
     assign io_o = shift_out;
     assign io_oe = (cs_sync && byte_count >= 3'd4) ? 8'hFF : 8'h00;  // drive output during data phase
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            shift_in    <= 40'h0;
+            shift_in    <= 32'h0;
             byte_count  <= 0;
             shift_out   <= 8'h0;
             read_data   <= 8'h0;
@@ -94,7 +93,7 @@ module ospi_memory (
                 // chip select active
                 if (sck_rising) begin
                     // shift in 8 bits from master on SCK rising edge
-                    shift_in <= {shift_in[31:0], io_i_sync};
+                    shift_in <= {shift_in[23:0], io_i_sync};
 
                     if (byte_count < 5) begin
                         byte_count <= byte_count + 1;
@@ -117,6 +116,7 @@ module ospi_memory (
                             byte_count <= 0;
                         end else if (byte_count == 3) begin
                             // after addr (3 bytes), capture it
+                            // shift_in after this edge: [cmd,addr_hi,addr_mid,addr_lo]
                             mem_addr <= {shift_in[23:0], io_i_sync};
                         end
                     end
@@ -128,7 +128,7 @@ module ospi_memory (
             end else begin
                 // chip select inactive: reset
                 byte_count <= 0;
-                shift_in   <= 40'h0;
+                shift_in   <= 32'h0;
                 shift_out  <= 8'h0;
             end
         end

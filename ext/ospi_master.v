@@ -12,15 +12,15 @@ module ospi_master (
     output reg [7:0] io_o,    // data output to ASIC
     input [7:0] io_i,         // data input from ASIC
     
-    // Status flags from ASIC
-    input page_interrupt,     // pulse: CPU reached PC==15, needs page load
-    input page_loading_ack,   // asserted: CPU waiting for page
-    input cpu_halted,         // asserted: CPU is halted
+    // status flags from asic
+    input page_interrupt,     // pulse: slot-7 instruction finished, page swap needed
+    input page_loading,       // asserted: cpu is waiting for page load
+    input is_halted,          // asserted: cpu is halted
     
     // Page data interface
     // External system (e.g., external DRAM controller) provides page data
     input [7:0] page_data_in,     // instruction data from external storage
-    output reg [3:0] page_data_idx, // which instruction in page (0-15)
+    output reg [2:0] page_data_idx, // which instruction in page (0-7)
     output reg page_data_valid,     // pulse: request next instruction byte
     
     // Page tracking
@@ -45,7 +45,7 @@ module ospi_master (
 
     reg [3:0] state, state_next;
     reg [4:0] byte_count;  // which byte in transaction (0-4: cmd, addr[2:0], data)
-    reg [3:0] instr_idx;   // instruction index within page (0-15)
+    reg [2:0] instr_idx;   // instruction index within page (0-7)
     
     // transaction data
     reg [7:0] cmd_byte;
@@ -78,15 +78,15 @@ module ospi_master (
             end
             
             ST_WAIT_PAGE: begin
-                // wait for page_loading_ack to indicate CPU is halted and waiting
-                if (page_loading_ack) begin
+                // wait for page_loading to indicate cpu is halted and waiting
+                if (page_loading) begin
                     state_next = ST_LOAD_PAGE;
                 end
             end
             
             ST_LOAD_PAGE: begin
-                // load all 16 instructions for this page via OSPI
-                if (instr_idx == 4'd15 && byte_count == 5'd0 && sck_pulse) begin
+                // load all 8 instructions for this page via OSPI
+                if (instr_idx == 3'd7 && byte_count == 5'd0 && sck_pulse) begin
                     // done loading page
                     state_next = ST_IDLE;
                 end else begin
@@ -113,7 +113,7 @@ module ospi_master (
             ST_XFER_DATA: begin
                 // send data byte (instruction)
                 if (byte_count == 5'd1 && sck_pulse) begin
-                    if (instr_idx == 4'd15) begin
+                    if (instr_idx == 3'd7) begin
                         // last instruction, go back to LOAD_PAGE to signal done
                         state_next = ST_LOAD_PAGE;
                     end else begin
@@ -145,7 +145,7 @@ module ospi_master (
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             byte_count <= 5'd0;
-            instr_idx <= 4'd0;
+            instr_idx <= 3'd0;
             current_page <= 8'd0;
             page_load_done <= 1'b0;
             cs_n <= 1'b1;
@@ -162,7 +162,7 @@ module ospi_master (
                 ST_IDLE: begin
                     cs_n <= 1'b1;
                     byte_count <= 5'd0;
-                    instr_idx <= 4'd0;
+                    instr_idx <= 3'd0;
                 end
                 
                 ST_WAIT_PAGE: begin
@@ -172,21 +172,22 @@ module ospi_master (
                 ST_LOAD_PAGE: begin
                     if (byte_count == 5'd0 && sck_pulse) begin
                         // start new transaction for this instruction
+                        // address = 0x00000N where N = instr_idx (0..7)
                         cs_n <= 1'b0;
                         cmd_byte <= CMD_WRITE;
-                        addr <= {16'h0000, instr_idx, 4'h0};  // 0x00[idx]00
+                        addr <= {21'h000000, instr_idx};
                         page_data_valid <= 1'b1;  // request instruction from external storage
                         byte_count <= byte_count + 1'b1;
                     end else if (byte_count > 5'd0 && byte_count <= 5'd4 && sck_pulse) begin
                         byte_count <= byte_count + 1'b1;
                     end
-                    
-                    if (instr_idx == 4'd15 && byte_count == 5'd5 && sck_pulse) begin
+
+                    if (instr_idx == 3'd7 && byte_count == 5'd5 && sck_pulse) begin
                         // end transaction after last instruction
                         cs_n <= 1'b1;
                         page_load_done <= 1'b1;  // signal page load complete
                         current_page <= current_page + 1'b1;  // next page
-                        instr_idx <= 4'd0;
+                        instr_idx <= 3'd0;
                         byte_count <= 5'd0;
                     end else if (byte_count == 5'd5 && sck_pulse) begin
                         // end transaction for this instruction

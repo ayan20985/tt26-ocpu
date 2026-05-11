@@ -26,13 +26,13 @@ module ocpu_core (
     input  wire        page_done,    // page_controller signals iRAM is ready
     input  wire        page_loading, // page_controller is busy (cpu must stay halted)
 
-    // iRAM read port (to iram_regfile)
-    output wire [3:0]  iram_rd_slot,
+    // iRAM read port (to iram_regfile, 8 slots)
+    output wire [2:0]  iram_rd_slot,
     input  wire [16:0] iram_rd_data, // {dirty, opcode, sub, imm8}
 
     // iRAM cpu write port (self-modifying code / constant patching)
     output reg         iram_wr_en,
-    output reg  [3:0]  iram_wr_slot,
+    output reg  [2:0]  iram_wr_slot,
     output reg  [15:0] iram_wr_data,
 
     // data memory bus (to SPI via project.v arbitration)
@@ -53,10 +53,10 @@ module ocpu_core (
     output wire [7:0]  dbg_sp,
     output wire [7:0]  dbg_sr,
     output wire [7:0]  dbg_ir,
-    output wire [3:0]  dbg_pc,
+    output wire [2:0]  dbg_pc,
 `endif
 
-    output wire [3:0]  out_pc
+    output wire [2:0]  out_pc
 );
 
     // -------------------------------------------------------------------------
@@ -64,7 +64,7 @@ module ocpu_core (
     // -------------------------------------------------------------------------
     reg [7:0]  a, x, y, sp;
     reg [7:0]  sr;        // [0]=C [1]=Z [2]=N [3]=V [4]=I
-    reg [3:0]  pc;
+    reg [2:0]  pc;        // 3-bit PC indexes iRAM[0..7] (8-slot page)
     reg [7:0]  data_page; // separate page for data accesses
 
     // decoded fields latched from iram_rd_data at FETCH
@@ -274,7 +274,7 @@ module ocpu_core (
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state        <= ST_RESET;
-            pc           <= 4'h0;
+            pc           <= 3'h0;
             page_reg     <= 8'h00;
             data_page    <= 8'h00;
             a  <= 8'h00; x  <= 8'h00;
@@ -287,7 +287,7 @@ module ocpu_core (
             mem_addr     <= 16'h0000;
             mem_wdata    <= 8'h00;
             iram_wr_en   <= 0;
-            iram_wr_slot <= 4'h0;
+            iram_wr_slot <= 3'h0;
             iram_wr_data <= 16'h0000;
             ir_op  <= 4'h0; ir_sub <= 4'h0; ir_imm <= 8'h00;
             mdr    <= 8'h00; eff_addr <= 16'h0000; t1 <= 8'h00;
@@ -319,7 +319,7 @@ module ocpu_core (
                 // Wait for page load to complete
                 ST_PAGE_WAIT: begin
                     if (page_done) begin
-                        pc    <= 4'h0;
+                        pc    <= 3'h0;
                         state <= ST_FETCH;
                     end
                 end
@@ -494,7 +494,8 @@ module ocpu_core (
                         mem_req   <= 1;
                         mem_rw    <= 1;
                         mem_addr  <= {data_page, sp};
-                        mem_wdata <= (ir_op == OP_JSR) ? (pc + 4'h1) : a;
+                        // JSR return address = pc+1 (5 bits zero-padded to 8)
+                        mem_wdata <= (ir_op == OP_JSR) ? {5'h00, pc + 3'h1} : a;
                     end
                 end
 
@@ -506,7 +507,7 @@ module ocpu_core (
                         mem_req <= 0;
                         case (ir_op)
                             OP_RTS: begin
-                                pc    <= mem_rdata[3:0];
+                                pc    <= mem_rdata[2:0];
                                 state <= ST_FETCH;
                             end
                             OP_REG: begin // PLA
@@ -554,18 +555,18 @@ module ocpu_core (
 
                         OP_BR: begin
                             if (branch_taken) begin
-                                // imm8 is signed offset relative to current pc
-                                pc <= pc + ir_imm[3:0]; // 4-bit relative (same page only)
+                                // imm8 is signed offset relative to current pc (3-bit, same page only)
+                                pc <= pc + ir_imm[2:0];
                             end
                         end
 
                         OP_JMP: begin
-                            pc <= ir_imm[3:0]; // intra-page absolute
+                            pc <= ir_imm[2:0]; // intra-page absolute (slot 0..7)
                         end
 
                         OP_JSR: begin
                             // push already done in ST_PUSH, now jump
-                            pc <= ir_imm[3:0];
+                            pc <= ir_imm[2:0];
                         end
 
                         OP_RTS: ; // pc restored in ST_POP
@@ -608,11 +609,10 @@ module ocpu_core (
 
                         OP_SMOD: begin
                             // Patch imm8 field of an iRAM slot.
-                            // slot = ir_sub, new imm8 = a (runtime value)
+                            // slot = ir_sub[2:0] (only 3 bits used, top bit ignored), new imm8 = a.
                             // upper 8 bits (opcode+sub) come from existing iram slot unchanged.
-                            // This is how the assembler emits constant-patching microcode.
                             iram_wr_en   <= 1;
-                            iram_wr_slot <= ir_sub;
+                            iram_wr_slot <= ir_sub[2:0];
                             // keep opcode+sub of target slot, replace imm8 with A
                             iram_wr_data <= {iram_rd_data[15:8], a};
                         end
@@ -635,7 +635,7 @@ module ocpu_core (
 
                     // Advance PC unless a jump/page-op already overrode state
                     if (state == ST_FETCH) begin
-                        if (pc == 4'hF) begin
+                        if (pc == 3'h7) begin
                             // Natural page advance: page_reg++, reload next page
                             page_next <= page_reg + 8'h01;
                             page_req  <= 1;
