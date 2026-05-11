@@ -25,32 +25,26 @@ module ospi_memory (
     output wire [7:0]  io_oe       // tri-state control (1=drive, 0=Hi-Z)
 );
 
-    // synchronize external OSPI signals to local clock
-    reg sck_r1, sck_r2;
-    reg cs_r1, cs_r2;
-    reg [7:0] io_i_r1, io_i_r2;
+    // synchronize external OSPI signals to local clock (single stage)
+    reg sck_r1;
+    reg cs_r1;
+    reg [7:0] io_i_r1;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             sck_r1 <= 0;
-            sck_r2 <= 0;
             cs_r1 <= 1;
-            cs_r2 <= 1;
             io_i_r1 <= 8'h00;
-            io_i_r2 <= 8'h00;
         end else begin
             sck_r1  <= sck;
-            sck_r2  <= sck_r1;
             cs_r1   <= cs_n;
-            cs_r2   <= cs_r1;
             io_i_r1 <= io_i;
-            io_i_r2 <= io_i_r1;
         end
     end
 
-    wire sck_sync = sck_r2;
-    wire cs_sync = cs_r2;
-    wire [7:0] io_i_sync = io_i_r2;
+    wire sck_sync = sck_r1;
+    wire cs_sync = cs_r1;
+    wire [7:0] io_i_sync = io_i_r1;
 
     // detect SCK rising edge
     reg sck_prev;

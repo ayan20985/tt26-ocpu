@@ -26,7 +26,7 @@ module ocpu_core (
 	output wire is_halted;
 	input wire page_done;
 	input wire page_loading;
-	output wire page_interrupt;  // pulse: page boundary reached (PC==15)
+	output wire page_interrupt;  // pulse: page boundary reached (PC==9)
 	output wire [3:0] iram_rd_slot;
 	input wire [16:0] iram_rd_data;
 	output reg iram_wr_en;
@@ -43,7 +43,7 @@ module ocpu_core (
 	reg [7:0] x;
 	reg [7:0] y;
 	reg [7:0] sp;
-	reg [7:0] sr;
+	reg [4:0] sr;  // reduced: [4]=I, [3]=unused, [2]=N, [1]=Z, [0]=C
 	reg [3:0] pc;
 	reg [7:0] data_page;
 	reg [3:0] ir_op;
@@ -78,8 +78,6 @@ module ocpu_core (
 	localparam [3:0] ALU_CMP = 4'h7;
 	localparam [3:0] ALU_ASL = 4'h8;
 	localparam [3:0] ALU_LSR = 4'h9;
-	localparam [3:0] ALU_ROL = 4'ha;
-	localparam [3:0] ALU_ROR = 4'hb;
 	localparam [3:0] REG_TAX = 4'h0;
 	localparam [3:0] REG_TXA = 4'h1;
 	localparam [3:0] REG_TAY = 4'h2;
@@ -131,7 +129,7 @@ module ocpu_core (
 	                || (state == ST_IND_Y1)   || (state == ST_IND_Y2);
 	reg page_interrupt_r;
 	assign page_interrupt = page_interrupt_r;
-	reg wrap_pending;  // set when slot 15 is fetched; triggers page swap after execute
+	reg wrap_pending;  // set when slot 9 is fetched; triggers page swap after execute
 	reg [8:0] alu_result;
 	reg [7:0] alu_op_b;
 	always @(*) begin
@@ -149,8 +147,6 @@ module ocpu_core (
 				ALU_CMP: alu_result = {1'b0, a} - {1'b0, alu_op_b};
 				ALU_ASL: alu_result = {a[7], a[6:0], 1'b0};
 				ALU_LSR: alu_result = {a[0], 1'b0, a[7:1]};
-				ALU_ROL: alu_result = {a[7], a[6:0], sr[0]};
-				ALU_ROR: alu_result = {a[0], sr[0], a[7:1]};
 				default: alu_result = 9'h000;
 			endcase
 		else
@@ -187,7 +183,7 @@ module ocpu_core (
 			x <= 8'h00;
 			y <= 8'h00;
 			sp <= 8'hff;
-			sr <= 8'h00;
+			sr <= 5'h00;
 			mem_req <= 0;
 			mem_rw <= 0;
 			mem_addr <= 16'h0000;
@@ -227,7 +223,7 @@ module ocpu_core (
 					if (!run_enable)
 						state <= ST_HALTED;
 					else if (wrap_pending) begin
-						// previous slot-15 instruction returned here without passing through ST_EXECUTE
+						// previous slot-9 instruction returned here without passing through ST_EXECUTE
 						wrap_pending <= 0;
 						page_interrupt_r <= 1;
 						state <= ST_PAGE_REQ;
@@ -235,8 +231,8 @@ module ocpu_core (
 						ir_op <= iram_rd_data[15:12];
 						ir_sub <= iram_rd_data[11:8];
 						ir_imm <= iram_rd_data[7:0];
-						if (pc == 4'hf) begin
-							// slot 15: fetch and execute it, wrap PC, page-swap after execute
+						if (pc == 4'h9) begin
+							// slot 9: fetch and execute it, wrap PC, page-swap after execute
 							pc <= 4'h0;
 							wrap_pending <= 1;
 						end else begin
@@ -488,23 +484,23 @@ module ocpu_core (
 								end
 								REG_INX: begin
 									x <= x + 1;
-									sr[1] <= x == 8'hff;
-									sr[2] <= x[7] ^ (x == 8'h7f) ^ (x == 8'hff);
+									sr[1] <= (x + 1) == 0;
+									sr[2] <= (x + 1)[7];
 								end
 								REG_DEX: begin
 									x <= x - 1;
-									sr[1] <= x == 8'h01;
-									sr[2] <= x[7] ^ (x == 8'h00) ^ (x == 8'h80);
+									sr[1] <= (x - 1) == 0;
+									sr[2] <= (x - 1)[7];
 								end
 								REG_INY: begin
 									y <= y + 1;
-									sr[1] <= y == 8'hff;
-									sr[2] <= y[7] ^ (y == 8'h7f) ^ (y == 8'hff);
+									sr[1] <= (y + 1) == 0;
+									sr[2] <= (y + 1)[7];
 								end
 								REG_DEY: begin
 									y <= y - 1;
-									sr[1] <= y == 8'h01;
-									sr[2] <= y[7] ^ (y == 8'h00) ^ (y == 8'h80);
+									sr[1] <= (y - 1) == 0;
+									sr[2] <= (y - 1)[7];
 								end
 								REG_TSX: x <= sp;
 								REG_TXS: sp <= x;
@@ -537,7 +533,7 @@ module ocpu_core (
 								SYS_CLI: sr[4] <= 0;
 								SYS_SEC: sr[0] <= 1;
 								SYS_CLC: sr[0] <= 0;
-								SYS_CLV: sr[3] <= 0;
+								SYS_CLV: ;  // overflow flag removed for area savings
 								default:
 									;
 							endcase

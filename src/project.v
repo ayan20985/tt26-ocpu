@@ -21,7 +21,7 @@
 //   uo_out[7:4] = 0
 //
 // ── OSPI address map (cmd 0x02 = write, 0x03 = read) ─────────────────────────
-//   0x000000–0x00000F  iRAM slots 0–15
+//   0x000000–0x000009  iRAM slots 0–9
 //                        write: load instruction byte into slot addr[3:0]
 //                        read:  return lower byte of slot addr[3:0]
 //   0xFE0000            data_req read: {7'b0, cpu_mem_rw}
@@ -31,7 +31,7 @@
 //   0xFE0100            data_req ack:  write rdata here to unblock CPU
 //                        wdata byte → cpu_mem_rdata, pulses cpu_mem_ready 1 cycle
 //   0xFD0000            dirty_bits[7:0]   slots 0–7  modified by CPU (SMOD)
-//   0xFD0001            dirty_bits[15:8]  slots 8–15 modified by CPU (SMOD)
+//   0xFD0001            dirty_bits[9:8]   slots 8–9  modified by CPU (SMOD)
 //   0xFF0000            page_reg read: current instruction page number
 
 module tt_um_ocpu (
@@ -83,7 +83,7 @@ module tt_um_ocpu (
     wire        cpu_iram_wr_en;
     wire [3:0]  cpu_iram_wr_slot;
     wire [15:0] cpu_iram_wr_data;
-    wire [15:0] dirty_bits;      // bit N = slot N was written by CPU since last page load
+    wire [9:0] dirty_bits;       // bit N = slot N was written by CPU since last page load
     wire [15:0] pg_iram_rd_data; // OSPI readback port (FPGA can verify loaded instructions)
 
     iram_regfile iram (
@@ -247,7 +247,7 @@ module tt_um_ocpu (
 
                 // dirty bits: which iRAM slots were modified by CPU since last page load
                 24'hFD0000: ospi_mem_rdata_out <= dirty_bits[7:0];       // slots 0-7
-                24'hFD0001: ospi_mem_rdata_out <= dirty_bits[15:8];      // slots 8-15
+                24'hFD0001: ospi_mem_rdata_out <= {6'b0, dirty_bits[9:8]};  // slots 8-9
 
                 // current instruction page number
                 24'hFF0000: ospi_mem_rdata_out <= page_reg;
