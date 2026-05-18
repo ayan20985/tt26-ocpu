@@ -44,7 +44,21 @@ module tb_chip;
     wire [7:0] uio_oe;
 
     // -- the dut: full chip top --
+    // when running gate-level (GL_TEST + USE_POWER_PINS) the synthesized
+    // netlist of tt_um_ocpu exposes VPWR/VGND ports that must be tied,
+    // otherwise every cell evaluates to X and uo_out/uio_out are
+    // unreadable. tie them here so the same testbench works for both
+    // RTL and GL simulation.
+`ifdef GL_TEST
+    wire VPWR = 1'b1;
+    wire VGND = 1'b0;
+`endif
+
     tt_um_ocpu dut (
+`ifdef GL_TEST
+        .VPWR    (VPWR),
+        .VGND    (VGND),
+`endif
         .ui_in   (ui_in),
         .uo_out  (uo_out),
         .uio_in  (uio_in),
