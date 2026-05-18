@@ -18,7 +18,7 @@ final cpu / iram / dram state.
    * the flag bits `N`, `V`, `Z`, `C`, `I` (and the raw `sr`).
    * the iram page the cpu was sitting in when `HLT` executed
      (16-bit slot words, decoded into `op / sub / imm` for readability).
-   * every iram page the FpgaModel ever shipped to the cpu — that is,
+   * every iram page the FpgaModel ever shipped to the cpu - that is,
      the full program image in load order, including auto-generated
      `FARJMP` slot-7 page bridges.
    * every dram byte the program touched (initial `.data` image plus
@@ -39,7 +39,7 @@ at all:
     pwsh tools\run_c.ps1 -Source test\programs\c_src\sample_6502.s -NoBuild
 
 (the runner doesn't care whether the `.hex` came from c or from
-hand-written 6502 or hand-written ocpu — it just loads it.)
+hand-written 6502 or hand-written ocpu - it just loads it.)
 
 ## what the example program does
 
@@ -80,7 +80,7 @@ dump shows:
   which are subroutines in cc65's runtime library. our cpu cannot
   host that library because (a) there is no barrel shifter in the
   rtl (the ALU has dead code for ASL/LSR/ROL/ROR that ST_DECODE
-  never reaches — this would be a silicon change, not a software
+  never reaches - this would be a silicon change, not a software
   one) and (b) the runtime helpers assume a 256-byte 6502 stack
   page and 16-bit pointer registers we don't have. so even if a
   hardware shifter existed, we'd still be missing the link-time
@@ -98,6 +98,6 @@ just go.
 
 `tools/run_c.ps1` only invokes `build_c.ps1` on a single file. if you
 want to assemble several `.c` files together you'll need to call
-`cl65` (cc65's linker driver) yourself — that path is not wired up
+`cl65` (cc65's linker driver) yourself - that path is not wired up
 today because it brings in cc65's runtime crt0 which our cpu can't
 host yet.

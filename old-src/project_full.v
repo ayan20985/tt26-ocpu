@@ -171,7 +171,7 @@ module tt_um_ocpu (
     assign dbg_oc_cache = oc_cache;
 `endif
 
-    // memory bus arbitration (single core) — mmio + on-chip sram
+    // memory bus arbitration (single core) - mmio + on-chip sram
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             master_state <= MASTER_STATE_INIT;

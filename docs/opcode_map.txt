@@ -52,4 +52,4 @@
 0x1C    SEC         CLC         SEI          CLI
 0x20    JMP abs     JSR abs     RTS          RTI
 0x24    PHA         PLA         BEQ          BNE
-0x28    BCS         BCC         —            —
+0x28    BCS         BCC         -            -

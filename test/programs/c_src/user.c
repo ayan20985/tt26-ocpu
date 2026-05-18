@@ -15,10 +15,10 @@
  *   - global `unsigned char` variables and arrays (DATA / BSS)
  *   - straight-line code: assignments, `+`, `-`, `&`, `|`, `^`
  *   - `if` / `else` with a single comparison (`>`, `<`, `==`, `!=`,
- *     `>=`, `<=`) — the translator auto-routes cross-page branches
+ *     `>=`, `<=`) - the translator auto-routes cross-page branches
  *     through inverted-skip + FARJMP bridges
  *   - indexed reads/writes on global arrays where the index is a
- *     literal (`arr[3] = arr[5];`) — cc65 lowers these to plain
+ *     literal (`arr[3] = arr[5];`) - cc65 lowers these to plain
  *     absolute loads/stores
  *   - unrolled fixed-count loops (copy-paste the body N times)
  *
@@ -29,7 +29,7 @@
  *   - `for (i = ...; i < N; i++)` loops, because `i` ends up on that
  *     same software stack
  *   - multiplication / division / modulo / shifts (`*`, `/`, `%`,
- *     `<<`, `>>`). these are NOT 6502 instructions — cc65 emits
+ *     `<<`, `>>`). these are NOT 6502 instructions - cc65 emits
  *     `jsr mulax`/`jsr divax`/`jsr shrax1` runtime calls, and our cpu
  *     has neither a barrel shifter (the ALU literally has no shift
  *     path wired into ST_DECODE) nor a port of the runtime library

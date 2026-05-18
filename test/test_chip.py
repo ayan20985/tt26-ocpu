@@ -1,5 +1,5 @@
 """
-test_chip.py — cocotb chip-top test for tt_um_ocpu.
+test_chip.py - cocotb chip-top test for tt_um_ocpu.
 
 drives the FULL chip (src/project.v) via its real Tiny Tapeout pins
 through tb_chip.v. validates the silicon-side OSPI slave end-to-end:
@@ -168,7 +168,7 @@ async def test_chip_ospi_load_and_run(dut):
     await m.releaseReset(20)
 
     # build the page: LDA #$5A, HLT, then 6 NOPs as filler.
-    # encodings come from ocpu_asm — assemble a tiny source so we don't
+    # encodings come from ocpu_asm - assemble a tiny source so we don't
     # hand-encode here.
     src = (
         ".page 0\n"
@@ -262,7 +262,7 @@ async def test_chip_smod_writeback(dut):
     # it's far away from the HLT (slot 2) and the LDA (slot 0).
     # SMOD <slot>, <imm>: the CPU writes A into the LOW byte of iram[slot].
     # the imm field is a placeholder/value the assembler emits but the CPU
-    # ignores at run time — A is the actual source.
+    # ignores at run time - A is the actual source.
     src = (
         ".page 0\n"
         "LDA #$A5\n"
@@ -304,7 +304,7 @@ async def test_chip_smod_writeback(dut):
     # OSPI-read iRAM slot 4. the SMOD contract is:
     #   * the LOW byte of the target slot is overwritten with A (here 0xA5)
     #   * the HIGH byte is concurrently overwritten with whatever
-    #     iram_rd_data[15:8] is at the time the SMOD executes — that's
+    #     iram_rd_data[15:8] is at the time the SMOD executes - that's
     #     the HI byte of the slot the CPU is currently FETCHING (PC+1),
     #     not the target slot. this is a known CPU quirk: SMOD is
     #     primarily a self-modify hook for the LOW byte (the imm field

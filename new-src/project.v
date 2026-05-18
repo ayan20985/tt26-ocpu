@@ -240,10 +240,10 @@ module tt_um_ocpu (
     // -------------------------------------------------------------------------
     // Status flags output to FPGA
     // FPGA polls uo_out to know when to act:
-    //   [0] page_interrupt  — 1-cycle pulse, page swap needed (start loading next page)
-    //   [1] page_loading    — echo of uio_in[4], confirms CPU is in page-wait state
-    //   [2] is_halted       — CPU not making forward progress for any reason
-    //   [3] data_req        — CPU waiting for a data memory transaction to be serviced
+    //   [0] page_interrupt  - 1-cycle pulse, page swap needed (start loading next page)
+    //   [1] page_loading    - echo of uio_in[4], confirms CPU is in page-wait state
+    //   [2] is_halted       - CPU not making forward progress for any reason
+    //   [3] data_req        - CPU waiting for a data memory transaction to be serviced
     // -------------------------------------------------------------------------
     assign uo_out[0] = page_interrupt;  // 1-cycle pulse: slot-7 executed, load next page
     assign uo_out[1] = page_loading;    // echo: asserted while CPU waits for page load

@@ -547,8 +547,8 @@ def _dumpFinalState(dut, fpga: 'FpgaModel') -> None:
 
     log.info(" ")
     if not fpga.dram:
-        log.info("DRAM: (empty — program neither read nor wrote any address)")
-        else:
+        log.info("DRAM: (empty - program neither read nor wrote any address)")
+    else:
         log.info(f"DRAM ({len(fpga.dram)} byte(s); addr -> value)")
         log.info("-" * 72)
         for addr in sorted(fpga.dram.keys()):

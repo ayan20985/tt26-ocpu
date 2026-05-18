@@ -32,21 +32,21 @@ the ocpu features a single-core architectural approach utilizing a multi-level f
 Main Opcodes (4-bit)
 op[3:0] Mnemonic        Description                     Sub-field                               Notes
 0x0     LDA             Load A          sub[1:0]:       00=imm, 01=abs, 10=abs+X, 11=(zp),Y     Z, N flags
-0x1     STA             Store A         sub[1:0]:       00=abs, 01=abs+X, 10=(zp),Y             —
+0x1     STA             Store A         sub[1:0]:       00=abs, 01=abs+X, 10=(zp),Y             -
 0x2     LDX             Load X          sub[0]:         0=imm, 1=abs                            Z, N flags
 0x3     LDY             Load Y          sub[0]:         0=imm, 1=abs                            Z, N flags
-0x4     STX             Store X         —               (abs only)                              —
-0x5     STY             Store Y         —               (abs only)                              —
+0x4     STX             Store X         -               (abs only)                              -
+0x5     STY             Store Y         -               (abs only)                              -
 0x6     ALU             Arith/Logic                     See ALU table                           C, Z, N flags
-0x7     BR              Branch                          See BR table                            —
-0x8     JMP             Jump (intra-page)               imm8[3:0] = target PC                   —
+0x7     BR              Branch                          See BR table                            -
+0x8     JMP             Jump (intra-page)               imm8[3:0] = target PC                   -
 0x9     JSR             Jump Subroutine                 imm8[3:0] = target PC                   Push PC+1 to stack
-0xA     RTS             Return from Subroutine          —                                       Pop PC from stack
+0xA     RTS             Return from Subroutine          -                                       Pop PC from stack
 0xB     FARJMP          Far Jump (page cross)           sub[3]: 0=rel, 1=abs                    Page switch + reload
 0xC     REG             Register ops                    See REG table                           Variable
-0xD     LDSP            Load/Store page regs            See LDSP table                          —
+0xD     LDSP            Load/Store page regs            See LDSP table                          -
 0xE     SMOD            Self-Modify iRAM                sub[3:0] = slot                         Patch imm8 field
-0xF     SYS             System                          See SYS table                           —
+0xF     SYS             System                          See SYS table                           -
 ```
 
 ```

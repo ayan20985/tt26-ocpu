@@ -13,17 +13,13 @@
 
   "//": "PL_TARGET_DENSITY_PCT - You can increase this if Global Placement fails with error GPL-0302.",
   "//": "Users have reported that values up to 80 worked well for them.",
-  "//": "lowered from 75 -> 60: at 1x2 with ~66% raw util the router was hanging",
-  "//": "for hours because cells were packed too tight; loosening density gives",
-  "//": "global+detailed routing slack tracks to work with. if PNR still hangs,",
-  "//": "drop this to 50 (and if that works, you can also leave it at 50).",
-  "PL_TARGET_DENSITY_PCT": 60,
+  "PL_TARGET_DENSITY_PCT": 75,
 
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
   "CLOCK_PERIOD": 20,
 
-  "//": "Hold slack margin - Increase them in case you are getting hold violations.",
+  "//": "Hold slack margin - Increase them in  case you are getting hold violations.",
   "PL_RESIZER_HOLD_SLACK_MARGIN": 0.1,
   "GRT_RESIZER_HOLD_SLACK_MARGIN": 0.05,
 
@@ -57,34 +53,12 @@
   "//": "Absolute die size",
   "FP_SIZING": "absolute",
 
-  "//": "GRT_ALLOW_CONGESTION used to be 1 here, which let global routing finish",
-  "//": "with overflow and shoved the unsolved congestion onto the detailed router",
-  "//": "(which is the step that was hanging for hours). with the lower target",
-  "//": "density above the router should now finish cleanly, so we keep this 0.",
-  "GRT_ALLOW_CONGESTION": 0,
-
-  "//": "Routability helpers - let GRT actually repair antennas / insert diodes",
-  "//": "during global routing instead of bailing or looping. inexpensive runtime",
-  "//": "wise and routinely required at TT pin density.",
-  "GRT_REPAIR_ANTENNAS": 1,
-  "RUN_HEURISTIC_DIODE_INSERTION": 1,
-  "DIODE_INSERTION_STRATEGY": 3,
-
-  "//": "Give GRT and the detailed router enough iterations to actually converge",
-  "//": "before declaring a route failure. defaults can be too low for moderately",
-  "//": "congested designs.",
-  "GRT_OVERFLOW_ITERS": 200,
-  "DRT_OPT_ITERS": 64,
-
-  "//": "Synthesis strategy - bias slightly toward area so we get fewer parallel",
-  "//": "buffer trees feeding the same fanout cones (those are what blew up the",
-  "//": "wire count last time).",
-  "SYNTH_STRATEGY": "AREA 0",
+  "GRT_ALLOW_CONGESTION": 1,
 
   "FP_IO_HLENGTH": 2,
   "FP_IO_VLENGTH": 2,
 
-  "FP_PDN_VPITCH": 50,
+  "FP_PDN_VPITCH": 38.87,
 
   "//": "Clock",
   "RUN_CTS": 1,

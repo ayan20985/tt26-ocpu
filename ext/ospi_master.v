@@ -152,7 +152,7 @@ module ospi_master #(
                     if (sck_phase_end) begin
                         tick  <= 0;
                         half  <= 1'b1;     // entering rising half
-                        sck   <= 1'b1;     // SCK rising edge — slave samples
+                        sck   <= 1'b1;     // SCK rising edge - slave samples
                         state <= ST_SEND;
                     end else begin
                         tick <= tick + 1'b1;

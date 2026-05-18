@@ -16,7 +16,7 @@
 // ====================================
 // All four control signals live on the dedicated input bank (ui_in) so they
 // can never alias the bidirectional OSPI data bus. This is a deliberate
-// change from earlier revisions — on the prior chip layout SCK and CS_N
+// change from earlier revisions - on the prior chip layout SCK and CS_N
 // shared bits 0 and 1 with the data bus, which made it impossible for the
 // master to ever transmit a write command (0x02) because bit 0 was forced
 // high whenever SCK was high during sampling.
@@ -109,13 +109,13 @@
 //      with that byte. This pulses cpu_mem_ready for 1 cycle and unblocks
 //      the CPU.
 // The CPU drives addr/rw/wdata live the entire time it's stalled, so no
-// snapshot is needed — just read them when ready.
+// snapshot is needed - just read them when ready.
 
 // Reference Implementation
 // =========================
-//   ospi_master.v      — transactional OSPI master with req / ack handshake.
+//   ospi_master.v      - transactional OSPI master with req / ack handshake.
 //                        hides the 5-byte burst and SCK toggling.
-//   page_controller.v  — sits on top of ospi_master and implements the
+//   page_controller.v  - sits on top of ospi_master and implements the
 //                        page-swap and data-memory protocols against a
 //                        local program and data backing store.
 
@@ -126,6 +126,6 @@
 // 2. The chip's slave samples io_i in the chip's local clock domain, so
 //    keeping SCK significantly slower than clk is necessary. clk:SCK ratio
 //    of 8:1 (SCK_DIV=4) is sane and validated in simulation.
-// 3. The two paths (page swap, data request) can be interleaved freely —
+// 3. The two paths (page swap, data request) can be interleaved freely -
 //    page_controller.v gives page swap priority because it unblocks all
 //    future fetches; a stalled data_req only blocks one cpu instruction.

@@ -9,7 +9,7 @@
 // the four control signals (SCK, CS_N, page_done, page_loading) live on the
 // dedicated input bank (ui_in) so they cannot alias the bidirectional OSPI
 // data bus (uio_in / uio_out / uio_oe). this matters because the OSPI slave
-// samples io_i on every SCK rising edge — if SCK shared a bit with io_i,
+// samples io_i on every SCK rising edge - if SCK shared a bit with io_i,
 // the master could never transmit a byte whose value differed from "SCK
 // asserted high", which on the old map made it impossible to send the
 // write command (0x02). same story for CS_N and the two FPGA->CPU page
@@ -285,10 +285,10 @@ module tt_um_ocpu (
     // -------------------------------------------------------------------------
     // Status flags output to FPGA
     // FPGA polls uo_out to know when to act:
-    //   [0] page_interrupt  — 1-cycle pulse, page swap needed (start loading next page)
-    //   [1] page_loading    — echo of uio_in[4], confirms CPU is in page-wait state
-    //   [2] is_halted       — CPU not making forward progress for any reason
-    //   [3] data_req        — CPU waiting for a data memory transaction to be serviced
+    //   [0] page_interrupt  - 1-cycle pulse, page swap needed (start loading next page)
+    //   [1] page_loading    - echo of uio_in[4], confirms CPU is in page-wait state
+    //   [2] is_halted       - CPU not making forward progress for any reason
+    //   [3] data_req        - CPU waiting for a data memory transaction to be serviced
     // -------------------------------------------------------------------------
     assign uo_out[0] = page_interrupt;  // 1-cycle pulse: slot-7 executed, load next page
     assign uo_out[1] = page_loading;    // echo: asserted while CPU waits for page load

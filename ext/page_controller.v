@@ -75,11 +75,11 @@ module page_controller (
     // -------------------------------------------------------------------
     localparam [4:0]
         S_IDLE              = 5'd0,
-        // page swap — writeback scan
+        // page swap - writeback scan
         S_WB_RD_DIRTY       = 5'd1,
         S_WB_PICK           = 5'd2,
         S_WB_RD_SLOT        = 5'd3,
-        // page swap — load
+        // page swap - load
         S_LD_RAISE          = 5'd4,
         S_LD_FETCH          = 5'd5,
         S_LD_WRITE          = 5'd6,

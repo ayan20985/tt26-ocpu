@@ -237,7 +237,7 @@ module ocpu_core (
                 default: alu_result = 9'h000;
             endcase
         end else begin
-            // Immediate-operand binary ops — sub[2:0] mirrors ALU_ADD..ALU_CMP
+            // Immediate-operand binary ops - sub[2:0] mirrors ALU_ADD..ALU_CMP
             case (ir_sub[2:0])
                 ALU_ADD[2:0]: alu_result = {1'b0, a} + {1'b0, alu_op_b};
                 ALU_ADC[2:0]: alu_result = {1'b0, a} + {1'b0, alu_op_b} + {8'h00, sr[0]};

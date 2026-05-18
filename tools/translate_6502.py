@@ -273,7 +273,7 @@ def pass1Layout(text: str, layout: dict[str, int]) -> dict[str, int]:
             continue  # unknown directive; ignore for layout
 
         # instruction line (CODE segment). bind any pending labels but
-        # we do not assign them a numeric address — they remain symbolic
+        # we do not assign them a numeric address - they remain symbolic
         # for the ocpu assembler to resolve as slot indices.
         # nothing further to do at layout time.
         pendingLabels = []
@@ -526,7 +526,7 @@ def translateInstruction(state: TranslateState, mnem: str, operand: str,
 
 
 # -------------------------------------------------------------------------
-# auto-pager — basic-block-aware page packing
+# auto-pager - basic-block-aware page packing
 # -------------------------------------------------------------------------
 BRANCH_MNEMS = {'BEQ', 'BNE', 'BCS', 'BCC', 'BMI', 'BPL'}
 BRANCH_INVERT = {'BEQ': 'BNE', 'BNE': 'BEQ',
@@ -546,7 +546,7 @@ class _Atom:
                           target is on a different page after placement
                           the emit step rewrites it to FARJMP.
         kind = 'jsr'    : an unconditional JSR; same-page only.
-        kind = 'misc'   : passthrough line (comment / blank) — 0 slots.
+        kind = 'misc'   : passthrough line (comment / blank) - 0 slots.
     """
     __slots__ = ('kind', 'text', 'name', 'mnem', 'target', 'comment',
                  'slotCost')
@@ -625,7 +625,7 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
         where FARJMP delivers control).
       * `JMP target` (unconditional) gets rewritten to `FARJMP <page>`
         when the target ends up on a different page.
-      * `JSR target` cross-page is rejected — the cpu only saves the
+      * `JSR target` cross-page is rejected - the cpu only saves the
         3-bit slot on call, so a cross-page rts cannot reconstruct the
         right page.
 
@@ -855,7 +855,7 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
 # -------------------------------------------------------------------------
 def pass2Codegen(text: str, state: TranslateState, mainEntry: bool = False) -> None:
     """walk the source. data emissions go into a separate buffer that is
-    prepended in front of the code stream — the ocpu assembler forbids
+    prepended in front of the code stream - the ocpu assembler forbids
     `.byte` after the first `.page`, so all dram seeding must happen
     first."""
     segment = 'CODE'
@@ -974,7 +974,7 @@ def pass2Codegen(text: str, state: TranslateState, mainEntry: bool = False) -> N
     # blocks always start at slot 0 of a fresh page). cross-page
     # conditional branches are rewritten as `<inverted-br> __local;
     # FARJMP <target_page>` and re-packed (so the 2-slot expansion is
-    # accounted for during placement). cross-page JSR is rejected — our
+    # accounted for during placement). cross-page JSR is rejected - our
     # cpu only saves the 3-bit slot on call, so a cross-page return is
     # structurally impossible without a software-managed return page.
     pagedBuf = autoPageBlocks(codeBuf, state.warnings)

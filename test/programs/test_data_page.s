@@ -1,5 +1,5 @@
 ; test_data_page.s
-; verifies LDA_DP / STA_DP — switching the high byte of the 16-bit data
+; verifies LDA_DP / STA_DP - switching the high byte of the 16-bit data
 ; address used by abs / abs,X / (zp),Y loads and stores.
 ;
 ; preload dram[0x0044] = 0x11 and dram[0x0244] = 0x22.

@@ -179,7 +179,7 @@ have now been fixed and are exercised by the chip-top regression
 (`test/test_chip.py` against `test/tb_chip.v`, which instantiates the
 full `tt_um_ocpu` top with real Tiny Tapeout pins):
 
-1. **Pin-overlap fix** — SCK, CS_N, page_done, and page_loading have
+1. **Pin-overlap fix** - SCK, CS_N, page_done, and page_loading have
    been moved off the `uio_in[7:0]` data bus onto the dedicated input
    bank `ui_in[0..3]`. previously `uio_in[0]/[1]` aliased `io_i[0]/[1]`,
    which made it impossible for the master to transmit any byte whose
@@ -187,7 +187,7 @@ full `tt_um_ocpu` top with real Tiny Tapeout pins):
    high during sampling. moving them to a non-bidirectional bank removes
    the alias entirely.
 
-2. **CS_N polarity fix in `ospi_memory.v`** — the slave's main `always`
+2. **CS_N polarity fix in `ospi_memory.v`** - the slave's main `always`
    block previously had `if (cs_sync)` (i.e. "if CS_N is HIGH"), so the
    slave only ever processed bytes while the chip was *deselected*. that
    has been flipped to `if (!cs_sync)` so the slave actually responds
@@ -197,7 +197,7 @@ full `tt_um_ocpu` top with real Tiny Tapeout pins):
    upstream rdata mux has one full SCK half-period to deliver data before
    the master clocks byte 4.
 
-3. **iRAM byte-pair loading** — the chip used to replicate the single
+3. **iRAM byte-pair loading** - the chip used to replicate the single
    OSPI byte onto both halves of the iRAM slot (`wr_pg_data <=
    {ospi_mem_wdata, ospi_mem_wdata}`), which meant only instructions
    with `hi == lo` could be loaded (so e.g. `HLT = 0xF000` could never
@@ -208,11 +208,11 @@ full `tt_um_ocpu` top with real Tiny Tapeout pins):
 
 after these fixes the chip can boot from cold reset, load a full page
 over real OSPI, execute it, and the FPGA can read back dirty bits +
-modified slots — all validated by `test/test_chip.py`:
+modified slots - all validated by `test/test_chip.py`:
 
-* `test_chip_ospi_load_and_run`  — load `LDA #$5A; HLT` over OSPI, run, verify `is_halted`.
-* `test_chip_ospi_readback`      — write 8 distinct 16-bit words, read back every byte, verify all match.
-* `test_chip_smod_writeback`     — run a SMOD program, OSPI-read `dirty_bits` at `0xFD0000`, OSPI-read the modified slot, verify the writeback contract.
+* `test_chip_ospi_load_and_run`  - load `LDA #$5A; HLT` over OSPI, run, verify `is_halted`.
+* `test_chip_ospi_readback`      - write 8 distinct 16-bit words, read back every byte, verify all match.
+* `test_chip_smod_writeback`     - run a SMOD program, OSPI-read `dirty_bits` at `0xFD0000`, OSPI-read the modified slot, verify the writeback contract.
 
 run them with:
 
@@ -306,7 +306,7 @@ binary in that location, in `%LOCALAPPDATA%\cc65\bin\`, or on `PATH`.
   backward branches stay on the inverted-skip + JMP microcode path
   and the JMP is auto-rewritten to FARJMP when it crosses pages.
 * cross-page `JSR` is rejected with a clear warning, because the cpu
-  only saves the 3-bit slot on call — a cross-page `RTS` cannot
+  only saves the 3-bit slot on call - a cross-page `RTS` cannot
   reconstruct the right page.
 * in `--main-entry` mode (default in `build_c.ps1`) the LAST emitted
   `RTS` is rewritten to `HLT`, which lets cc65's `_main`-returns-into-
