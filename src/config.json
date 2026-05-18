@@ -71,7 +71,6 @@
 
   "//": "Only export pin area in LEF (without any connected nets)",
   "MAGIC_WRITE_LEF_PINONLY": 1,
-
   "VERILOG FILES BLACKBOX":["dir::macros/name.v"],
   "EXTRA_LEFS": ["dir::macros/name.lef"],
   "EXTRA_GDS_FILES": ["dir::macros/name.gds"],
