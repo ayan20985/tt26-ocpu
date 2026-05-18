@@ -1,4 +1,4 @@
 module names(
-    input wire pin1, pin2
+    input wire inpin
 );
 endmodule
