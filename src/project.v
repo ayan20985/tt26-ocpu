@@ -6,24 +6,43 @@
 // services CPU data memory requests, and coordinates page switches.
 //
 // ── Pin map ──────────────────────────────────────────────────────────────────
-//   uio_in[0]   = OSPI SCK      external master drives clock
-//   uio_in[1]   = OSPI CS_N     external master drives chip-select
-//   uio_in[7:0] = OSPI IO[7:0]  8-bit parallel data bus (master→slave on write,
-//                                slave→master on read via uio_out/uio_oe)
-//   uio_in[3]   = page_done     FPGA pulses high when new instruction page loaded
-//   uio_in[4]   = page_loading  FPGA holds high while loading a page
+// the four control signals (SCK, CS_N, page_done, page_loading) live on the
+// dedicated input bank (ui_in) so they cannot alias the bidirectional OSPI
+// data bus (uio_in / uio_out / uio_oe). this matters because the OSPI slave
+// samples io_i on every SCK rising edge — if SCK shared a bit with io_i,
+// the master could never transmit a byte whose value differed from "SCK
+// asserted high", which on the old map made it impossible to send the
+// write command (0x02). same story for CS_N and the two FPGA->CPU page
+// handshake pulses.
+//
+//   ui_in[0]    = OSPI SCK         external master drives clock
+//   ui_in[1]    = OSPI CS_N        external master drives chip-select (active low)
+//   ui_in[2]    = page_done        FPGA pulses high when new instruction page loaded
+//   ui_in[3]    = page_loading     FPGA holds high while loading a page
+//   ui_in[7:4]  = reserved (tied unused on the chip; pull-down on FPGA side)
+//
+//   uio_in[7:0]  = OSPI IO_I[7:0]  8-bit parallel data, master -> slave on write
+//   uio_out[7:0] = OSPI IO_O[7:0]  8-bit parallel data, slave -> master on read
+//   uio_oe[7:0]  = OSPI IO_OE      slave drives outputs only during read-data byte
 //
 // ── Output status flags (FPGA polls these) ───────────────────────────────────
 //   uo_out[0]   = page_interrupt  1-cycle pulse after slot-7 instruction executes
-//   uo_out[1]   = page_loading    echo of uio_in[4], confirms CPU is waiting
+//   uo_out[1]   = page_loading    echo of ui_in[3], confirms CPU is waiting
 //   uo_out[2]   = is_halted       CPU stalled for any reason (page wait / data wait / HLT)
 //   uo_out[3]   = data_req        CPU has a pending data memory transaction
 //   uo_out[7:4] = 0
 //
 // ── OSPI address map (cmd 0x02 = write, 0x03 = read) ─────────────────────────
-//   0x000000–0x000007  iRAM slots 0–7
-//                        write: load instruction byte into slot addr[2:0]
-//                        read:  return lower byte of slot addr[2:0]
+//   0x000000–0x00000F  iRAM slot bytes. each slot stores a 16-bit instruction
+//                        word as two OSPI-addressable bytes:
+//                          addr[3:1] = slot index (0..7)
+//                          addr[0]   = 0 -> LOW byte (bits 7:0  / immediate)
+//                                      1 -> HIGH byte (bits 15:8 / opcode+sub)
+//                        a full instruction load is two writes: first the LOW
+//                        byte (latched internally), then the HIGH byte
+//                        (commits the full 16-bit word into the iRAM slot in
+//                        the same cycle). reads are byte-granular and
+//                        return either half directly.
 //   0xFE0000            data_req read: {7'b0, cpu_mem_rw}
 //   0xFE0001            data_req read: cpu_mem_addr[15:8]
 //   0xFE0002            data_req read: cpu_mem_addr[7:0]
@@ -65,8 +84,12 @@ module tt_um_ocpu (
     wire       ospi_sck_i;
     wire       ospi_cs_n_i;
 
-    assign ospi_sck_i  = uio_in[0];
-    assign ospi_cs_n_i = uio_in[1];
+    // control signals on the dedicated input bank (do NOT alias the data bus)
+    assign ospi_sck_i  = ui_in[0];
+    assign ospi_cs_n_i = ui_in[1];
+    // data bus on the bidirectional bank. uio_in carries master-driven payload
+    // bytes on writes (and reads, where the master still drives 4 transfer
+    // bytes before tri-stating for the slave to drive byte 4).
     assign ospi_io_i   = uio_in[7:0];
 
     assign uio_out = ospi_io_o;
@@ -85,13 +108,28 @@ module tt_um_ocpu (
     wire [7:0]  dirty_bits;      // bit N = slot N was written by CPU since last page load
     wire [15:0] pg_iram_rd_data; // OSPI readback port (FPGA can verify loaded instructions)
 
+    // OSPI loads a full 16-bit instruction word in two OSPI byte writes.
+    // address[0]=0 writes the LO byte (latched here without touching iRAM),
+    // address[0]=1 writes the HI byte and commits {hi, lo_latch} into the
+    // iRAM slot indexed by address[3:1].
+    reg [7:0] iram_lo_latch;
+    wire iram_addr_match = (ospi_mem_addr[23:4] == 20'h00000);  // 0x000000..0x00000F
+    wire iram_wr_lo = ospi_mem_write && iram_addr_match && (ospi_mem_addr[0] == 1'b0);
+    wire iram_wr_hi = ospi_mem_write && iram_addr_match && (ospi_mem_addr[0] == 1'b1);
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) iram_lo_latch <= 8'h0;
+        else if (iram_wr_lo) iram_lo_latch <= ospi_mem_wdata;
+    end
+
     iram_regfile iram (
         .clk         (clk),
         .rst_n       (rst_n),
-        // OSPI write port: active when master writes to address 0x00000N (N=slot 0..7)
-        .wr_pg_en    (ospi_mem_write && (ospi_mem_addr[23:3] == 21'h000000)),
-        .wr_pg_slot  (ospi_mem_addr[2:0]),
-        .wr_pg_data  ({ospi_mem_wdata, ospi_mem_wdata}),  // byte replicated to both halves
+        // OSPI write port: commits on the HI-byte write of each slot.
+        // wr_pg_data = {hi, lo_latch} reconstructs the full 16-bit word.
+        .wr_pg_en    (iram_wr_hi),
+        .wr_pg_slot  (ospi_mem_addr[3:1]),
+        .wr_pg_data  ({ospi_mem_wdata, iram_lo_latch}),
         // CPU write port (SMOD instruction modifies lower byte of a slot)
         .wr_cpu_en   (cpu_iram_wr_en),
         .wr_cpu_slot (cpu_iram_wr_slot),
@@ -101,8 +139,9 @@ module tt_um_ocpu (
         .rd_data     (cpu_iram_rd_data),
         // dirty-bit vector output
         .dirty_bits  (dirty_bits),
-        // OSPI readback port
-        .rd_pg_slot  (ospi_mem_addr[2:0]),
+        // OSPI readback port. note slot index is addr[3:1]; the LO/HI byte
+        // selection happens in the rdata-mux below using addr[0].
+        .rd_pg_slot  (ospi_mem_addr[3:1]),
         .rd_pg_data  (pg_iram_rd_data)
     );
 
@@ -142,8 +181,10 @@ module tt_um_ocpu (
     wire [7:0]  page_reg;        // from CPU: current page register value
     wire        page_interrupt;  // from CPU: slot-7 instruction just finished
 
-    wire page_done    = uio_in[3];  // from FPGA: new page is loaded and ready
-    wire page_loading = uio_in[4];  // from FPGA: page load is in progress
+    // page handshake also lives on the dedicated input bank to keep it
+    // independent of the OSPI data bus traffic.
+    wire page_done    = ui_in[2];  // from FPGA: new page is loaded and ready
+    wire page_loading = ui_in[3];  // from FPGA: page load is in progress
 
     // -------------------------------------------------------------------------
     // CPU data memory bus
@@ -217,8 +258,12 @@ module tt_um_ocpu (
             ospi_mem_rdata_out <= 8'h00;
         end else if (ospi_mem_read) begin
             casez (ospi_mem_addr)
-                // iRAM readback: addr 0x000000-0x000007 (slots 0-7)
-                24'b0000_0000_0000_0000_0000_0???: ospi_mem_rdata_out <= pg_iram_rd_data[7:0];
+                // iRAM readback: addr 0x000000-0x00000F.
+                //   addr[3:1] = slot, addr[0] = lo (0) / hi (1) byte select
+                24'b0000_0000_0000_0000_0000_????:
+                    ospi_mem_rdata_out <= ospi_mem_addr[0]
+                                          ? pg_iram_rd_data[15:8]
+                                          : pg_iram_rd_data[7:0];
 
                 // data memory request signals (CPU drives these live while stalled)
                 24'hFE0000: ospi_mem_rdata_out <= {7'b0, cpu_mem_rw};    // rw flag
@@ -251,6 +296,9 @@ module tt_um_ocpu (
     assign uo_out[3] = cpu_mem_req;     // CPU has pending data memory request
     assign uo_out[7:4] = 4'b0;
 
-    wire _unused = &{ena, ui_in};
+    // ui_in[0..3] are the OSPI control + page handshake signals (consumed
+    // above). ui_in[7:4] are reserved for future use; tie-off so synthesis
+    // does not warn.
+    wire _unused = &{ena, ui_in[7:4]};
 
 endmodule

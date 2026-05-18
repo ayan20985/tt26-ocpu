@@ -32,7 +32,10 @@
 param(
     [Parameter(Mandatory)] [string]$Source,
     [string]$Cpu = "6502",
-    [switch]$NoOptimize
+    [switch]$NoOptimize,
+    [switch]$NoMainEntry  # set when the translated program already has a
+                          # custom entry sequence and doesn't need the
+                          # synthetic JSR _main / HLT wrapper
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,15 +43,28 @@ $ErrorActionPreference = "Stop"
 if (-not (Test-Path $Source)) {
     throw "source not found: $Source"
 }
+$Source = (Resolve-Path $Source).Path
+
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 
 # tool discovery
 function Find-Tool([string]$name) {
+    # 1. PATH
     $cmd = Get-Command $name -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
+    # 2. repo-local cc65/bin (when the user has dropped the prebuilt
+    #    snapshot zip directly under the repo, which is the path we
+    #    document in tools/build_c.ps1)
+    $local = Join-Path $repoRoot "cc65\bin\$name.exe"
+    if (Test-Path $local) { return $local }
+    # 3. user-local snapshot install
+    $userLocal = Join-Path $env:LOCALAPPDATA "cc65\bin\$name.exe"
+    if (Test-Path $userLocal) { return $userLocal }
     throw @"
-required tool '$name' not on PATH.
-install cc65 from https://github.com/cc65/cc65/releases and add its bin/
-directory to PATH (the package ships cc65, ca65, ld65, etc.).
+required tool '$name' not found.
+download the cc65 windows snapshot from
+  https://sourceforge.net/projects/cc65/files/cc65-snapshot-win32.zip
+and unzip it so that '$repoRoot\cc65\bin\$name.exe' exists.
 "@
 }
 
@@ -72,7 +88,9 @@ if ($NoOptimize) { $cc65Args += "-O-" } else { $cc65Args += "-O" }
 if ($LASTEXITCODE -ne 0) { throw "cc65 failed (exit $LASTEXITCODE)" }
 
 Write-Host "==> translate: $asmFile -> $ocpuFile" -ForegroundColor Cyan
-& $python $tx $asmFile -o $ocpuFile
+$txArgs = @($asmFile, "-o", $ocpuFile)
+if (-not $NoMainEntry) { $txArgs += "--main-entry" }
+& $python $tx @txArgs
 if ($LASTEXITCODE -ne 0) { throw "translator failed (exit $LASTEXITCODE)" }
 
 Write-Host "==> assemble: $ocpuFile -> $hexFile (+ $dataFile)" -ForegroundColor Cyan

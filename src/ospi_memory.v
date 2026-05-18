@@ -61,20 +61,23 @@ module ospi_memory (
     // address/data output registers driven by byte_count, so no separate
     // 32-bit shift register is needed. cmd_byte is also shrunk to two
     // single-bit flags (read vs. write) latched when byte 0 arrives.
-    reg [2:0]  byte_count;  // 0-4 for 5 bytes total
+    reg [2:0]  byte_count;
     reg [7:0]  shift_out;
-    reg [7:0]  read_data;
     reg        is_read_cmd;
     reg        is_write_cmd;
 
-    assign io_o = shift_out;
-    assign io_oe = (cs_sync && byte_count >= 3'd4) ? 8'hFF : 8'h00;  // drive output during data phase
+    // io_o always carries the current shift_out latch. io_oe is asserted
+    // only during byte 4 of a READ transaction (slave drives data), and the
+    // chip is selected. on a WRITE, the master keeps driving the bus for
+    // byte 4 too, so the slave must stay tri-stated to avoid bus contention.
+    assign io_o  = shift_out;
+    assign io_oe = (!cs_sync && is_read_cmd && byte_count == 3'd4)
+                   ? 8'hFF : 8'h00;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             byte_count   <= 0;
             shift_out    <= 8'h0;
-            read_data    <= 8'h0;
             mem_addr     <= 24'h0;
             mem_wdata    <= 8'h0;
             mem_write    <= 0;
@@ -82,53 +85,65 @@ module ospi_memory (
             is_read_cmd  <= 0;
             is_write_cmd <= 0;
         end else begin
+            // these are 1-cycle pulses to the upstream mem-bus consumer
             mem_write <= 0;
             mem_read  <= 0;
 
-            if (cs_sync) begin
-                // chip select active
+            // cs_n is active LOW. process bytes ONLY while the chip is
+            // selected, i.e. cs_sync == 0.
+            if (!cs_sync) begin
                 if (sck_rising) begin
-                    if (byte_count < 5) begin
-                        case (byte_count)
-                            // byte 0: command. latch the two cmd-decode flags
-                            // instead of keeping the whole 8-bit cmd_byte.
-                            3'd0: begin
-                                is_write_cmd <= (io_i_sync == 8'h02);
-                                is_read_cmd  <= (io_i_sync == 8'h03);
-                            end
-                            // bytes 1-3: address arrives MSB first. write directly
-                            // into the corresponding slice of the output address reg.
-                            3'd1: mem_addr[23:16] <= io_i_sync;
-                            3'd2: mem_addr[15:8]  <= io_i_sync;
-                            3'd3: mem_addr[7:0]   <= io_i_sync;
-                            // byte 4: data byte completes the transaction.
-                            3'd4: begin
-                                mem_wdata <= io_i_sync;
-                                if (is_write_cmd)
-                                    mem_write <= 1;
-                                else if (is_read_cmd) begin
-                                    mem_read  <= 1;
-                                    read_data <= mem_rdata;
-                                end
-                            end
-                            default: ;
-                        endcase
+                    case (byte_count)
+                        // byte 0: command. latch the two cmd-decode flags
+                        // instead of keeping the whole 8-bit cmd_byte.
+                        3'd0: begin
+                            is_write_cmd <= (io_i_sync == 8'h02);
+                            is_read_cmd  <= (io_i_sync == 8'h03);
+                        end
+                        // bytes 1-3: address arrives MSB first.
+                        3'd1: mem_addr[23:16] <= io_i_sync;
+                        3'd2: mem_addr[15:8]  <= io_i_sync;
+                        3'd3: begin
+                            mem_addr[7:0] <= io_i_sync;
+                            // address now complete. for a read, ask the
+                            // upstream rdata mux to update NOW so the
+                            // registered ospi_mem_rdata_out has the right
+                            // value by the time the master clocks byte 4.
+                            // the mux in project.v takes 1 extra clk cycle,
+                            // which is well within one SCK half-period.
+                            if (is_read_cmd) mem_read <= 1;
+                        end
+                        // byte 4: data byte completes the transaction. on a
+                        // write, master drove this byte; capture and pulse
+                        // mem_write. on a read, the master sampled io_o and
+                        // we have nothing to do here.
+                        3'd4: begin
+                            mem_wdata <= io_i_sync;
+                            if (is_write_cmd)
+                                mem_write <= 1;
+                        end
+                        default: ;
+                    endcase
 
-                        if (byte_count == 4)
-                            byte_count <= 0;
-                        else
-                            byte_count <= byte_count + 1;
-                    end
-
-                    // drive shift_out for data phase (preserves existing 1-cycle
-                    // OSPI read pipeline behaviour expected by the master)
-                    if (byte_count == 4)
-                        shift_out <= read_data;
+                    byte_count <= (byte_count == 3'd4)
+                                  ? 3'd0
+                                  : (byte_count + 3'd1);
                 end
+
+                // while we're in the data phase of a read, keep mirroring
+                // the currently-valid mem_rdata onto the output latch so
+                // shift_out is stable by the time the master clocks SCK
+                // for byte 4. (mem_rdata is registered upstream and was
+                // updated one cycle after the byte-3 mem_read pulse.)
+                if (is_read_cmd && byte_count == 3'd4)
+                    shift_out <= mem_rdata;
             end else begin
-                // chip select inactive: reset byte counter and output driver
-                byte_count <= 0;
-                shift_out  <= 8'h0;
+                // CS_N high: chip deselected. reset byte counter so the
+                // next burst starts cleanly, and stop driving the bus.
+                byte_count   <= 0;
+                shift_out    <= 8'h0;
+                is_read_cmd  <= 0;
+                is_write_cmd <= 0;
             end
         end
     end

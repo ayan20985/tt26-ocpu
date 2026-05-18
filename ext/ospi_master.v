@@ -1,221 +1,234 @@
-// ospi_master.v - OSPI Master for External FPGA
-// This module manages communication with the tt26-ocpu ASIC via OSPI slave interface.
-// The external FPGA acts as master, driving the paging protocol and page loads.
+`default_nettype none
 
-module ospi_master (
-    input clk,
-    input rst_n,
-    
-    // OSPI interface (to ASIC)
-    output reg sck,           // serial clock (50 MHz typical)
-    output reg cs_n,          // chip select (active low)
-    output reg [7:0] io_o,    // data output to ASIC
-    input [7:0] io_i,         // data input from ASIC
-    
-    // status flags from asic
-    input page_interrupt,     // pulse: slot-7 instruction finished, page swap needed
-    input page_loading,       // asserted: cpu is waiting for page load
-    input is_halted,          // asserted: cpu is halted
-    
-    // Page data interface
-    // External system (e.g., external DRAM controller) provides page data
-    input [7:0] page_data_in,     // instruction data from external storage
-    output reg [2:0] page_data_idx, // which instruction in page (0-7)
-    output reg page_data_valid,     // pulse: request next instruction byte
-    
-    // Page tracking
-    output reg [7:0] current_page,  // currently active page
-    output reg page_load_done       // pulse: finished loading page into ASIC
+// ospi_master.v
+// =============
+// 8-bit-parallel OSPI master that pairs with src/ospi_memory.v on the
+// tt26-ocpu chip. presents a simple synchronous request / acknowledge
+// interface to the rest of the FPGA, hides all 5-byte burst sequencing
+// and SCK toggling.
+//
+// request interface (req side):
+//   * raise req with rw / addr / wdata stable
+//   * wait for ack to pulse high for one clk cycle
+//   * on a read, rdata is valid on the same cycle as ack
+//   * drop req any time after ack; raising req again starts another burst
+//
+// physical pins (drive the new chip-side map from src/project.v):
+//   sck   -> ui_in[0]   (chip side)
+//   cs_n  -> ui_in[1]
+//   io_o  -> uio_in[7:0]  (master -> slave bytes 0..3, also byte 4 on writes)
+//   io_oe -> 1 except when the slave is driving byte 4 of a read
+//   io_i  -> uio_out[7:0] (slave -> master byte 4 on reads)
+//
+// timing model
+// ============
+// the OSPI slave samples on SCK rising edges and the master must keep
+// io_o stable for >=1 clk cycle around each edge. we therefore split
+// every SCK period into two equal half-periods (SCK_DIV clk cycles
+// each). on the falling half we update io_o for the byte we're about
+// to transmit; on the rising half the slave samples it.
+//
+// SCK_DIV default = 4 (clk/SCK = 8). bump up if your sim clk is fast
+// relative to slave's internal pipeline.
+//
+// transaction shape (matches src/ospi_memory.v exactly):
+//   byte 0 : cmd  (0x02=write, 0x03=read)
+//   byte 1 : addr[23:16]
+//   byte 2 : addr[15:8]
+//   byte 3 : addr[7:0]      (after this byte the slave knows whether it's
+//                            a read and triggers mem_read internally)
+//   byte 4 : data           (master drives on write; slave drives on read)
+//
+// the master deasserts cs_n between bursts so the slave's byte_count
+// resets cleanly. SCK is held low while cs_n is high.
+
+module ospi_master #(
+    parameter integer SCK_DIV = 4   // clk cycles per SCK half-period
+) (
+    input  wire        clk,
+    input  wire        rst_n,
+
+    // transactional request port
+    input  wire        req,         // pulse / level: kick off a transaction
+    input  wire        rw,          // 0 = read, 1 = write
+    input  wire [23:0] addr,
+    input  wire [7:0]  wdata,
+    output reg  [7:0]  rdata,
+    output reg         ack,         // 1-cycle pulse when transaction done
+
+    // pins to the chip (map onto ui_in / uio_* per the chip's pin map)
+    output reg         sck,
+    output reg         cs_n,
+    output reg  [7:0]  io_o,
+    output reg         io_oe,       // 1 = master drives uio, 0 = slave drives
+    input  wire [7:0]  io_i
 );
 
-    // fsm states
-    localparam [3:0] 
-        ST_IDLE        = 4'h0,
-        ST_WAIT_PAGE   = 4'h1,
-        ST_LOAD_PAGE   = 4'h2,
-        ST_XFER_CMD    = 4'h3,
-        ST_XFER_ADDR   = 4'h4,
-        ST_XFER_DATA   = 4'h5,
-        ST_WAIT_ACK    = 4'h6;
+    // -------------------------------------------------------------------
+    // state
+    // -------------------------------------------------------------------
+    localparam [2:0]
+        ST_IDLE  = 3'd0,
+        ST_CS_LO = 3'd1,   // assert cs_n, wait one SCK half-period
+        ST_SEND  = 3'd2,   // shifting bytes out (or sampling on read byte 4)
+        ST_CS_HI = 3'd3,   // raise cs_n, settle, return to IDLE
+        ST_ACK   = 3'd4;
 
-    // OSPI command codes (from ASIC spi_memory module)
-    localparam [7:0]
-        CMD_WRITE = 8'h02,
-        CMD_READ  = 8'h03;
+    reg [2:0] state;
+    reg [2:0] byte_idx;          // 0..4
+    reg       half;              // 0 = first half (sck low), 1 = second half (sck high)
+    reg [$clog2(SCK_DIV+1)-1:0] tick;  // counts clks within a half-period
 
-    reg [3:0] state, state_next;
-    reg [4:0] byte_count;  // which byte in transaction (0-4: cmd, addr[2:0], data)
-    reg [2:0] instr_idx;   // instruction index within page (0-7)
-    
-    // transaction data
-    reg [7:0] cmd_byte;
-    reg [23:0] addr;
-    reg [7:0] data_byte;
+    // captured request parameters
+    reg        rw_q;
+    reg [23:0] addr_q;
+    reg [7:0]  wdata_q;
 
-    // clock divider for OSPI SCK (half-period counter)
-    reg [4:0] sck_counter;
-    wire sck_pulse = (sck_counter == 5'd24);  // ~1 MHz SCK from 50 MHz clk
+    wire sck_phase_end = (tick == SCK_DIV - 1);
 
-    // fsm state transitions
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            state <= ST_IDLE;
-        end else begin
-            state <= state_next;
+    // -------------------------------------------------------------------
+    // pick the byte to transmit for byte_idx in 0..4
+    // -------------------------------------------------------------------
+    function automatic [7:0] tx_byte;
+        input [2:0]  bi;
+        input        rw_in;
+        input [23:0] a_in;
+        input [7:0]  d_in;
+        begin
+            case (bi)
+                3'd0:    tx_byte = rw_in ? 8'h02 : 8'h03;
+                3'd1:    tx_byte = a_in[23:16];
+                3'd2:    tx_byte = a_in[15:8];
+                3'd3:    tx_byte = a_in[7:0];
+                3'd4:    tx_byte = d_in;           // only meaningful for write
+                default: tx_byte = 8'h00;
+            endcase
         end
-    end
+    endfunction
 
-    // fsm logic
-    always @(*) begin
-        state_next = state;
-        
-        case (state)
-            ST_IDLE: begin
-                // wait for page_interrupt from ASIC
-                if (page_interrupt) begin
-                    state_next = ST_WAIT_PAGE;
-                end
-            end
-            
-            ST_WAIT_PAGE: begin
-                // wait for page_loading to indicate cpu is halted and waiting
-                if (page_loading) begin
-                    state_next = ST_LOAD_PAGE;
-                end
-            end
-            
-            ST_LOAD_PAGE: begin
-                // load all 8 instructions for this page via OSPI
-                if (instr_idx == 3'd7 && byte_count == 5'd0 && sck_pulse) begin
-                    // done loading page
-                    state_next = ST_IDLE;
-                end else begin
-                    state_next = ST_XFER_CMD;
-                end
-            end
-            
-            ST_XFER_CMD: begin
-                // send write command (0x02)
-                if (byte_count == 5'd1 && sck_pulse) begin
-                    state_next = ST_XFER_ADDR;
-                    byte_count = 5'd0;
-                end
-            end
-            
-            ST_XFER_ADDR: begin
-                // send 3-byte address: 0x00[instr_idx]00
-                if (byte_count == 5'd3 && sck_pulse) begin
-                    state_next = ST_XFER_DATA;
-                    byte_count = 5'd0;
-                end
-            end
-            
-            ST_XFER_DATA: begin
-                // send data byte (instruction)
-                if (byte_count == 5'd1 && sck_pulse) begin
-                    if (instr_idx == 3'd7) begin
-                        // last instruction, go back to LOAD_PAGE to signal done
-                        state_next = ST_LOAD_PAGE;
-                    end else begin
-                        // next instruction
-                        state_next = ST_LOAD_PAGE;
-                    end
-                    byte_count = 5'd0;
-                end
-            end
-        endcase
-    end
-
-    // SCK generation and byte/bit counters
+    // -------------------------------------------------------------------
+    // master fsm
+    // -------------------------------------------------------------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            sck_counter <= 5'd0;
-            sck <= 1'b0;
+            state    <= ST_IDLE;
+            byte_idx <= 3'd0;
+            half     <= 1'b0;
+            tick     <= 0;
+            rw_q     <= 1'b0;
+            addr_q   <= 24'h0;
+            wdata_q  <= 8'h0;
+            rdata    <= 8'h0;
+            ack      <= 1'b0;
+            sck      <= 1'b0;
+            cs_n     <= 1'b1;
+            io_o     <= 8'h00;
+            io_oe    <= 1'b1;
         end else begin
-            if (sck_counter == 5'd24) begin
-                sck_counter <= 5'd0;
-                sck <= ~sck;  // toggle SCK
-            end else begin
-                sck_counter <= sck_counter + 1'b1;
-            end
-        end
-    end
-
-    // transaction sequencing
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            byte_count <= 5'd0;
-            instr_idx <= 3'd0;
-            current_page <= 8'd0;
-            page_load_done <= 1'b0;
-            cs_n <= 1'b1;
-            cmd_byte <= 8'h00;
-            addr <= 24'h000000;
-            data_byte <= 8'h00;
-            io_o <= 8'h00;
-            page_data_valid <= 1'b0;
-        end else begin
-            page_load_done <= 1'b0;  // pulse output
-            page_data_valid <= 1'b0; // pulse output
-            
+            ack <= 1'b0;  // default; pulse below
             case (state)
+                // -----------------------------------------------------------
                 ST_IDLE: begin
-                    cs_n <= 1'b1;
-                    byte_count <= 5'd0;
-                    instr_idx <= 3'd0;
-                end
-                
-                ST_WAIT_PAGE: begin
-                    // wait for CPU to halt
-                end
-                
-                ST_LOAD_PAGE: begin
-                    if (byte_count == 5'd0 && sck_pulse) begin
-                        // start new transaction for this instruction
-                        // address = 0x00000N where N = instr_idx (0..7)
-                        cs_n <= 1'b0;
-                        cmd_byte <= CMD_WRITE;
-                        addr <= {21'h000000, instr_idx};
-                        page_data_valid <= 1'b1;  // request instruction from external storage
-                        byte_count <= byte_count + 1'b1;
-                    end else if (byte_count > 5'd0 && byte_count <= 5'd4 && sck_pulse) begin
-                        byte_count <= byte_count + 1'b1;
-                    end
-
-                    if (instr_idx == 3'd7 && byte_count == 5'd5 && sck_pulse) begin
-                        // end transaction after last instruction
-                        cs_n <= 1'b1;
-                        page_load_done <= 1'b1;  // signal page load complete
-                        current_page <= current_page + 1'b1;  // next page
-                        instr_idx <= 3'd0;
-                        byte_count <= 5'd0;
-                    end else if (byte_count == 5'd5 && sck_pulse) begin
-                        // end transaction for this instruction
-                        cs_n <= 1'b1;
-                        instr_idx <= instr_idx + 1'b1;
-                        byte_count <= 5'd0;
+                    sck   <= 1'b0;
+                    cs_n  <= 1'b1;
+                    io_oe <= 1'b1;
+                    if (req) begin
+                        rw_q     <= rw;
+                        addr_q   <= addr;
+                        wdata_q  <= wdata;
+                        byte_idx <= 3'd0;
+                        half     <= 1'b0;
+                        tick     <= 0;
+                        cs_n     <= 1'b0;             // assert cs_n
+                        io_o     <= tx_byte(3'd0, rw, addr, wdata);
+                        io_oe    <= 1'b1;
+                        state    <= ST_CS_LO;
                     end
                 end
+
+                // wait one half period after cs_n drops so the slave sees
+                // the asserted cs_n before the first SCK edge.
+                ST_CS_LO: begin
+                    if (sck_phase_end) begin
+                        tick  <= 0;
+                        half  <= 1'b1;     // entering rising half
+                        sck   <= 1'b1;     // SCK rising edge — slave samples
+                        state <= ST_SEND;
+                    end else begin
+                        tick <= tick + 1'b1;
+                    end
+                end
+
+                // SEND: every half-period we toggle SCK. on the falling
+                // half we update io_o for the NEXT byte; on the rising
+                // half the slave samples. for a read, on the falling
+                // half of byte 4 we tri-state io_oe so the slave can drive
+                // the data, and on the rising half we sample io_i.
+                ST_SEND: begin
+                    if (sck_phase_end) begin
+                        tick <= 0;
+                        if (half == 1'b1) begin
+                            // ending the rising half of byte byte_idx.
+                            // move to falling half of byte (byte_idx+1).
+                            half <= 1'b0;
+                            sck  <= 1'b0;
+                            if (byte_idx == 3'd4) begin
+                                // we just finished sampling byte 4 of a
+                                // read (or driving byte 4 of a write).
+                                // tear the burst down.
+                                cs_n  <= 1'b1;
+                                io_oe <= 1'b1;
+                                state <= ST_CS_HI;
+                            end else begin
+                                byte_idx <= byte_idx + 1'b1;
+                                // prepare next byte's value on the falling
+                                // half so it is stable for the next rising
+                                // edge.
+                                if ((byte_idx + 3'd1) == 3'd4 && !rw_q) begin
+                                    // entering byte 4 of a READ: stop
+                                    // driving; slave will take the bus.
+                                    io_oe <= 1'b0;
+                                    io_o  <= 8'h00;
+                                end else begin
+                                    io_oe <= 1'b1;
+                                    io_o  <= tx_byte(byte_idx + 3'd1,
+                                                     rw_q, addr_q, wdata_q);
+                                end
+                            end
+                        end else begin
+                            // ending the falling half. SCK goes high, slave
+                            // samples io_o (or master samples io_i on read
+                            // byte 4).
+                            half <= 1'b1;
+                            sck  <= 1'b1;
+                            if (byte_idx == 3'd4 && !rw_q) begin
+                                rdata <= io_i;
+                            end
+                        end
+                    end else begin
+                        tick <= tick + 1'b1;
+                    end
+                end
+
+                // hold cs_n high for one half-period to give the slave time
+                // to reset its byte counter before the next burst.
+                ST_CS_HI: begin
+                    if (sck_phase_end) begin
+                        tick  <= 0;
+                        state <= ST_ACK;
+                    end else begin
+                        tick <= tick + 1'b1;
+                    end
+                end
+
+                ST_ACK: begin
+                    ack   <= 1'b1;
+                    state <= ST_IDLE;
+                end
+
+                default: state <= ST_IDLE;
             endcase
         end
-    end
-
-    // OSPI data output (shift out on SCK falling edge, sample on rising edge)
-    always @(posedge clk) begin
-        if (sck_pulse && state == ST_LOAD_PAGE) begin
-            case (byte_count)
-                5'd1: io_o <= cmd_byte;  // command byte
-                5'd2: io_o <= addr[23:16];  // address byte 0
-                5'd3: io_o <= addr[15:8];   // address byte 1
-                5'd4: io_o <= addr[7:0];    // address byte 2
-                5'd5: io_o <= page_data_in; // data byte (from external storage)
-            endcase
-        end
-    end
-
-    // page_data_idx output: which instruction slot we're currently loading
-    always @(*) begin
-        page_data_idx = instr_idx;
     end
 
 endmodule

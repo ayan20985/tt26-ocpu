@@ -1,13 +1,14 @@
-; sample 6502 input for translator smoke test
-; (handwritten ca65 syntax)
+; sample 6502 program for the translator pipeline end-to-end test.
+; deliberately tiny so the microcode expansion still fits in one OCPU
+; page (8 slots). exercises immediate, store, INC (microcoded), BRK->HLT.
+;
+; behaviour:
+;   dram[0x40] starts at 0
+;   incremented once via INC -> dram[0x40] = 1
+;   halts.
 
 main:
-    LDA #$05
-    STA $40
-    LDX #$00
-loop:
-    INC $40
-    INX
-    CPX #$04
-    BNE loop
-    RTS
+    LDA #$00
+    STA $40                 ; dram[0x40] = 0
+    INC $40                 ; (microcoded as LDA / ADC / STA) -> 1
+    BRK

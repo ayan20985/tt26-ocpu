@@ -41,7 +41,7 @@ VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL = tb
 
 # cocotb python test module(s):
-COCOTB_TEST_MODULES = test_ocpu
+COCOTB_TEST_MODULES = test
 
 # include cocotb's make rules
 include $(shell cocotb-config --makefiles)/Makefile.sim
