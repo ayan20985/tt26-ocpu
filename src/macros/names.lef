@@ -16,6 +16,7 @@ MACRO names
   OBS
       LAYER met4 ;
       RECT -0.5 -0.5 4.8 18 ;
+  END
 END names
 END LIBRARY
 
