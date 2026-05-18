@@ -25,7 +25,7 @@ module ocpu_core (
 	// dominating routing on the 1x2 tile.
 	localparam integer SLOT_BITS      = 2;
 	localparam integer SLOTS_PER_PAGE = 1 << SLOT_BITS;
-	localparam [SLOT_BITS-1:0] LAST_SLOT  = SLOTS_PER_PAGE - 1;
+	localparam [SLOT_BITS-1:0] LAST_SLOT  = {SLOT_BITS{1'b1}};
 	localparam [SLOT_BITS-1:0] FIRST_SLOT = {SLOT_BITS{1'b0}};
 
 	input wire clk;
@@ -51,7 +51,9 @@ module ocpu_core (
 	reg [7:0] x;
 	reg [7:0] y;
 	reg [7:0] sp;
-	reg [4:0] sr;  // reduced: [4]=I, [3]=unused, [2]=N, [1]=Z, [0]=C
+	/* verilator lint_off UNUSEDSIGNAL */
+	reg [4:0] sr;  // reduced: [4]=I (write-only, no IRQ logic), [3]=unused, [2]=N, [1]=Z, [0]=C
+	/* verilator lint_on UNUSEDSIGNAL */
 	reg [SLOT_BITS-1:0] pc;  // 2-bit PC indexes iRAM[0..3] (4-slot page)
 	reg [7:0] data_page;
 	reg [3:0] ir_op;
@@ -78,6 +80,7 @@ module ocpu_core (
 	localparam [3:0] OP_LDSP = 4'hd;
 	localparam [3:0] OP_SMOD = 4'he;
 	localparam [3:0] OP_SYS = 4'hf;
+	/* verilator lint_off UNUSEDPARAM */
 	localparam [3:0] ALU_ADD = 4'h0;
 	localparam [3:0] ALU_ADC = 4'h1;
 	localparam [3:0] ALU_SUB = 4'h2;
@@ -85,6 +88,7 @@ module ocpu_core (
 	localparam [3:0] ALU_AND = 4'h4;
 	localparam [3:0] ALU_ORA = 4'h5;
 	localparam [3:0] ALU_EOR = 4'h6;
+	/* verilator lint_on UNUSEDPARAM */
 	localparam [3:0] ALU_CMP = 4'h7;
 	localparam [3:0] ALU_ASL = 4'h8;
 	localparam [3:0] ALU_LSR = 4'h9;
@@ -100,7 +104,9 @@ module ocpu_core (
 	localparam [3:0] REG_PLA = 4'h9;
 	localparam [3:0] REG_TSX = 4'ha;
 	localparam [3:0] REG_TXS = 4'hb;
+	/* verilator lint_off UNUSEDPARAM */
 	localparam [3:0] REG_NOP = 4'hf;
+	/* verilator lint_on UNUSEDPARAM */
 	localparam [3:0] LDSP_LDA_DP = 4'h0;
 	localparam [3:0] LDSP_STA_DP = 4'h1;
 	localparam [3:0] LDSP_LDA_PG = 4'h2;
@@ -112,7 +118,9 @@ module ocpu_core (
 	localparam [3:0] SYS_SEC = 4'h3;
 	localparam [3:0] SYS_CLC = 4'h4;
 	localparam [3:0] SYS_CLV = 4'h5;
+	/* verilator lint_off UNUSEDPARAM */
 	localparam [3:0] SYS_RTI = 4'h6;
+	/* verilator lint_on UNUSEDPARAM */
 	localparam [3:0] BR_BEQ = 4'h0;
 	localparam [3:0] BR_BNE = 4'h1;
 	localparam [3:0] BR_BCS = 4'h2;
