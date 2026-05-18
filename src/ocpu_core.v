@@ -425,17 +425,33 @@ module ocpu_core (
 						state <= ST_FETCH;
 					case (ir_op)
 						OP_LDA:
-							;
-						OP_LDX: begin
-							x <= mdr;
-							sr[1] <= mdr == 0;
-							sr[2] <= mdr[7];
-						end
-						OP_LDY: begin
-							y <= mdr;
-							sr[1] <= mdr == 0;
-							sr[2] <= mdr[7];
-						end
+							// LDA #imm already updated A and flags in ST_DECODE
+							// (no ST_MEM_READ visited); for the memory-mode
+							// variants (abs / abs,X / (zp),Y) we land here
+							// AFTER ST_MEM_READ has populated mdr, and the
+							// register transfer + flag update happens now.
+							if (ir_sub[1:0] != 2'b00) begin
+								a <= mdr;
+								sr[1] <= mdr == 0;
+								sr[2] <= mdr[7];
+							end
+						OP_LDX:
+							// LDX #imm already wrote X / flags in ST_DECODE;
+							// only the abs variant routes through ST_MEM_READ
+							// and arrives here needing the mdr -> X transfer.
+							if (ir_sub[0]) begin
+								x <= mdr;
+								sr[1] <= mdr == 0;
+								sr[2] <= mdr[7];
+							end
+						OP_LDY:
+							// LDY #imm already wrote Y / flags in ST_DECODE
+							// (see OP_LDX comment).
+							if (ir_sub[0]) begin
+								y <= mdr;
+								sr[1] <= mdr == 0;
+								sr[2] <= mdr[7];
+							end
 						OP_STX, OP_STY, OP_STA:
 							;
 						OP_ALU:
