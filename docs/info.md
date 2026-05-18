@@ -22,8 +22,8 @@ the ocpu features a single-core architectural approach utilizing a multi-level f
 
 ## features
 - the programmer-visible registers include 8-bit `a`, `x`, `y`, and `sp`, plus 8-bit `page_reg` (instruction page) and `data_page` (data address high byte).
-- the instruction path uses a 3-bit `pc` within an 8-slot iRAM page, and a latched instruction split into `ir_op`, `ir_sub`, and `ir_imm`, with an 8-bit `mdr` for data reads.
-- instruction storage is an 8-slot iRAM with a dirty bit per slot. the external fpga loads pages over the ospi interface, and the core raises a page interrupt after slot 7 executes.
+- the instruction path uses a 2-bit `pc` within a 4-slot iRAM page, and a latched instruction split into `ir_op`, `ir_sub`, and `ir_imm`, with an 8-bit `mdr` for data reads.
+- instruction storage is a 4-slot iRAM (no per-slot dirty bit; the external fpga writes every slot back unconditionally on each page swap). the fpga loads pages over the ospi interface, and the core raises a page interrupt after the last-slot instruction executes.
 - data memory accesses use a 16-bit address built as `{data_page, imm8}` and are serviced by the external fpga via the ospi register window.
 - status flags implemented are carry, zero, negative, and interrupt disable. there are no hardware interrupt vector or enable registers in this revision.
 
@@ -39,8 +39,8 @@ op[3:0] Mnemonic        Description                     Sub-field               
 0x5     STY             Store Y         -               (abs only)                              -
 0x6     ALU             Arith/Logic                     See ALU table                           C, Z, N flags
 0x7     BR              Branch                          See BR table                            -
-0x8     JMP             Jump (intra-page)               imm8[3:0] = target PC                   -
-0x9     JSR             Jump Subroutine                 imm8[3:0] = target PC                   Push PC+1 to stack
+0x8     JMP             Jump (intra-page)               imm8[1:0] = target PC                   -
+0x9     JSR             Jump Subroutine                 imm8[1:0] = target PC                   Push PC+1 to stack
 0xA     RTS             Return from Subroutine          -                                       Pop PC from stack
 0xB     FARJMP          Far Jump (page cross)           sub[3]: 0=rel, 1=abs                    Page switch + reload
 0xC     REG             Register ops                    See REG table                           Variable
@@ -70,7 +70,7 @@ sub[3:0]        Branch  Condition
 0x4             BMI     if N (minus / negative)
 0x5             BPL     if !N (plus / positive)
 
-Branch offset: imm8[3:0] (4-bit signed, same page only).
+Branch offset: imm8[1:0] (2-bit forward, same page only, max +2).
 ```
 
 ```

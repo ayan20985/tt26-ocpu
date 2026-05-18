@@ -4,9 +4,11 @@
 ; data_page resets to 0 so abs addresses use {0x00, imm}.
 
 .page 0
-    LDA #$37        ; A = 0x37
-    STA $42         ; dram[0x0042] = 0x37
-    LDA $42         ; A = dram[0x0042] = 0x37
-    ADD #$01        ; A = 0x38
-    STA $43         ; dram[0x0043] = 0x38
-    HLT
+    LDA #$37        ; slot 0  A = 0x37
+    STA $42         ; slot 1  dram[0x0042] = 0x37
+    LDA $42         ; slot 2  A = dram[0x0042] = 0x37
+    ADD #$01        ; slot 3  A = 0x38  (page wraps after this slot)
+
+.page 1
+    STA $43         ; slot 0  dram[0x0043] = 0x38
+    HLT             ; slot 1

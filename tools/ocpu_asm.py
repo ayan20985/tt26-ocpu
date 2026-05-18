@@ -7,15 +7,17 @@ instruction word layout (matches src/ocpu_core.v):
     [11:8]  = sub (4 bits)
     [7:0]   = imm (8 bits)
 
-programs are organised as 8-instruction pages. the cpu fetches each page
-into the 8-slot iram and runs slots 0..7; the page_interrupt fires after
-slot 7 and the test FPGA model loads the next page.
+programs are organised as SLOTS_PER_PAGE-instruction pages (currently 4).
+the cpu fetches each page into the iram, runs slots 0..SLOTS_PER_PAGE-1,
+and pulses page_interrupt after the last slot so the test FPGA model can
+load the next page.
 
 assembler features:
-    * intra-page labels resolved as imm[3:0] (slot number 0..7) for JMP / JSR
-    * BR* labels resolved as a 4-bit signed slot offset (current-slot-relative,
-      because the cpu evaluates `pc <= pc + ir_imm[2:0]` for taken branches
-      and we choose to support 0..7 forward only on the assembler side)
+    * intra-page labels resolved as imm[SLOT_BITS-1:0] (slot 0..N-1) for JMP / JSR
+    * BR* labels resolved as a SLOT_BITS-bit forward slot offset (current-slot-
+      relative, because the cpu evaluates `pc <= pc + ir_imm[SLOT_BITS-1:0]`
+      for taken branches and we choose to support forward-only on the
+      assembler side)
     * cross-page labels handled by FARJMP (page index lives in imm[7:0]) but
       no automatic emit; emit FARJMP explicitly when crossing pages
     * .page <n> directive aligns the assembler to page n, padding the previous
@@ -52,13 +54,13 @@ mnemonic mapping (op, sub, imm meaning):
       AND #imm     sub=0xC       ORA #imm     sub=0xD
       EOR #imm     sub=0xE       CMP #imm     sub=0xF
 
-    branches (op=0x7, imm low 3 bits = forward slot offset within page):
+    branches (op=0x7, imm low SLOT_BITS bits = forward slot offset within page):
       BEQ sub=0x0  BNE sub=0x1  BCS sub=0x2  BCC sub=0x3
       BMI sub=0x4  BPL sub=0x5
 
     control flow:
-      JMP <slot>     op=0x8 sub=0 imm[2:0]=target slot
-      JSR <slot>     op=0x9 sub=0 imm[2:0]=target slot
+      JMP <slot>     op=0x8 sub=0 imm[SLOT_BITS-1:0]=target slot
+      JSR <slot>     op=0x9 sub=0 imm[SLOT_BITS-1:0]=target slot
       RTS            op=0xA
       FARJMP <page>  op=0xB sub=0 imm=target page  (relative=0, abs=8 in sub)
 
@@ -72,7 +74,7 @@ mnemonic mapping (op, sub, imm meaning):
       LDA_DP sub=0  STA_DP sub=1  LDA_PG sub=2  LDSP #imm sub=3  STSP sub=4
 
     self-modify iram (op=0xE):
-      SMOD <slot>    sub[2:0]=slot   imm=value to patch into iram[slot][7:0]
+      SMOD <slot>    sub[SLOT_BITS-1:0]=slot  imm=value to patch into iram[slot][7:0]
 
     system (op=0xF, sub selects):
       HLT 0  SEI 1  CLI 2  SEC 3  CLC 4  CLV 5  RTI 6
@@ -89,6 +91,19 @@ import argparse
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
+
+# -------------------------------------------------------------------------
+# page geometry. must match SLOT_BITS in src/iram_regfile.v / src/ocpu_core.v.
+# -------------------------------------------------------------------------
+SLOT_BITS      = 2
+SLOTS_PER_PAGE = 1 << SLOT_BITS  # 4
+SLOT_MASK      = SLOTS_PER_PAGE - 1  # 0x3
+# largest legal forward intra-page branch offset. the cpu does
+#   pc_after = pc_taken + offset
+# where pc_taken == ins.slot + 1 (already wrapped mod SLOTS_PER_PAGE in
+# ST_FETCH). we require target slot > ins.slot and target slot <=
+# SLOTS_PER_PAGE-1, which yields offsets in 0..SLOTS_PER_PAGE-2.
+MAX_BRANCH_OFFSET = SLOTS_PER_PAGE - 2  # 2
 
 # -------------------------------------------------------------------------
 # opcode tables
@@ -206,11 +221,11 @@ class Assembler:
              pending_kind: Optional[str] = None) -> None:
         if self.inDataSection:
             raise AsmError(f"line {lineno}: instruction inside data section: {text}")
-        if self.curSlot >= 8:
+        if self.curSlot >= SLOTS_PER_PAGE:
             raise AsmError(
                 f"line {lineno}: page {self.curPage} overflow at slot "
-                f"{self.curSlot}; pages are exactly 8 slots wide. use .page "
-                f"or FARJMP to move into the next page."
+                f"{self.curSlot}; pages are exactly {SLOTS_PER_PAGE} slots "
+                f"wide. use .page or FARJMP to move into the next page."
             )
         self.slots.append(Instr(
             page=self.curPage, slot=self.curSlot,
@@ -221,7 +236,7 @@ class Assembler:
         self.curSlot += 1
 
     def padPageWithNops(self):
-        while self.curSlot < 8:
+        while self.curSlot < SLOTS_PER_PAGE:
             self.slots.append(Instr(
                 page=self.curPage, slot=self.curSlot,
                 word=NOP_WORD,
@@ -255,8 +270,9 @@ class Assembler:
         if len(args) != 1:
             raise AsmError(f"line {lineno}: .org expects exactly one argument")
         slot = parseNumber(args[0])
-        if not (0 <= slot < 8):
-            raise AsmError(f"line {lineno}: .org slot must be 0..7")
+        if not (0 <= slot < SLOTS_PER_PAGE):
+            raise AsmError(
+                f"line {lineno}: .org slot must be 0..{SLOTS_PER_PAGE - 1}")
         if slot < self.curSlot:
             raise AsmError(f"line {lineno}: .org would move backwards")
         while self.curSlot < slot:
@@ -412,7 +428,7 @@ class Assembler:
             parts = [p.strip() for p in op.split(',')]
             if len(parts) != 2:
                 raise AsmError(f"line {lineno}: SMOD expects 'slot, value'")
-            slot = parseNumber(parts[0]) & 0x7
+            slot = parseNumber(parts[0]) & SLOT_MASK
             val = parseNumber(parts[1]) & 0xFF
             self.emit(encodeWord(OP_SMOD, slot, val), lineno, raw); return
 
@@ -510,7 +526,7 @@ class Assembler:
         for lineno, raw in enumerate(text.splitlines(), start=1):
             self.assembleLine(raw, lineno)
         # pad final page if partially filled
-        if 0 < self.curSlot < 8:
+        if 0 < self.curSlot < SLOTS_PER_PAGE:
             self.padPageWithNops()
 
     # ----- second pass: patch label refs -----
@@ -540,36 +556,37 @@ class Assembler:
                 )
 
             if kind == 'jmp':
-                ins.word = encodeWord(OP_JMP, 0, tgt.slot & 0x7)
+                ins.word = encodeWord(OP_JMP, 0, tgt.slot & SLOT_MASK)
             elif kind == 'jsr':
-                ins.word = encodeWord(OP_JSR, 0, tgt.slot & 0x7)
+                ins.word = encodeWord(OP_JSR, 0, tgt.slot & SLOT_MASK)
             elif kind == 'branch':
-                # cpu does: pc <= pc + ir_imm[2:0]
+                # cpu does: pc <= pc + ir_imm[SLOT_BITS-1:0]
                 # at this point in execute, pc has already been incremented
                 # to the next slot in ST_FETCH, so the effective branch math is
                 #     pc_after = pc_taken + offset
-                # where pc_taken == ins.slot + 1 (already wrapped if slot 7).
+                # where pc_taken == ins.slot + 1 (already wrapped if last slot).
                 # we choose to ban backward and out-of-page branches.
                 offset = tgt.slot - (ins.slot + 1)
-                if not (0 <= offset <= 6):
+                if not (0 <= offset <= MAX_BRANCH_OFFSET):
                     raise AsmError(
                         f"line {ins.source_line}: branch from slot {ins.slot} "
                         f"to slot {tgt.slot} ({label!r}) needs offset {offset}; "
-                        f"only forward offsets 0..6 are supported."
+                        f"only forward offsets 0..{MAX_BRANCH_OFFSET} are "
+                        f"supported (page is {SLOTS_PER_PAGE} slots wide)."
                     )
-                # extract sub from word, write imm = offset (low 3 bits)
+                # extract sub from word, write imm = offset masked to SLOT_BITS
                 sub = (ins.word >> 8) & 0xF
-                ins.word = encodeWord(OP_BR, sub, offset & 0x7)
+                ins.word = encodeWord(OP_BR, sub, offset & SLOT_MASK)
             else:
                 raise AsmError(f"internal: unknown pending_kind {kind}")
 
     # ----- output -----
     def pageWords(self) -> list[list[int]]:
-        """return a list[page_index] -> list of 8 instruction words."""
+        """return list[page_index] -> SLOTS_PER_PAGE instruction words."""
         if not self.slots:
             return []
         npages = max(s.page for s in self.slots) + 1
-        out = [[NOP_WORD] * 8 for _ in range(npages)]
+        out = [[NOP_WORD] * SLOTS_PER_PAGE for _ in range(npages)]
         for s in self.slots:
             out[s.page][s.slot] = s.word
         return out
@@ -588,17 +605,19 @@ def assembleFile(path: str | Path) -> Assembler:
 
 def loadHexFile(path: str | Path) -> list[list[int]]:
     """load a .hex file (one 16-bit word per line, # lines are comments,
-    page headers are written as `# page N`) into pages of 8 words each."""
+    page headers are written as `# page N`) into pages of SLOTS_PER_PAGE
+    words each."""
     words: list[int] = []
     for raw in Path(path).read_text(encoding='utf-8').splitlines():
         s = raw.split('#', 1)[0].strip()
         if not s:
             continue
         words.append(int(s, 16) & 0xFFFF)
-    # round up to a multiple of 8
-    while len(words) % 8 != 0:
+    # round up to a multiple of SLOTS_PER_PAGE
+    while len(words) % SLOTS_PER_PAGE != 0:
         words.append(NOP_WORD)
-    return [words[i:i + 8] for i in range(0, len(words), 8)]
+    return [words[i:i + SLOTS_PER_PAGE]
+            for i in range(0, len(words), SLOTS_PER_PAGE)]
 
 
 def loadDataFile(path: str | Path) -> dict[int, int]:

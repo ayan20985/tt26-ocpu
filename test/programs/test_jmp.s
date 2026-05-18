@@ -6,6 +6,5 @@
     LDA #$42        ; slot 0  A = 0x42
     JMP done        ; slot 1  pc <- target slot
     LDA #$FF        ; slot 2  must be skipped
-    LDA #$FF        ; slot 3  must be skipped
 done:
-    HLT             ; slot 4
+    HLT             ; slot 3

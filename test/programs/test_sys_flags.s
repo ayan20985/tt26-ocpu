@@ -8,7 +8,7 @@
 ;   SEI -> I=1
 ;   CLC -> C=0
 ;   (I still 1)
-; final SR = 0b10000 (only I set; Z and N happen to be 0 from boot).
+; final SR has I=1, C=0.
 
 .page 0
     SEC             ; slot 0  C = 1

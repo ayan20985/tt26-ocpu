@@ -21,8 +21,10 @@
     LDA #$00        ; slot 0
     STA_DP          ; slot 1  data_page = 0
     LDA $44         ; slot 2  A = 0x11
-    LDA #$02        ; slot 3
-    STA_DP          ; slot 4  data_page = 2
-    LDA $44         ; slot 5  A = 0x22 (from page 2)
-    LDA_DP          ; slot 6  A = data_page = 0x02
-    HLT             ; slot 7
+    LDA #$02        ; slot 3  (page wraps)
+
+.page 1
+    STA_DP          ; slot 0  data_page = 2
+    LDA $44         ; slot 1  A = 0x22 (from page 2)
+    LDA_DP          ; slot 2  A = data_page = 0x02
+    HLT             ; slot 3

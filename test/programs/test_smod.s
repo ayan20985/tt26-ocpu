@@ -1,10 +1,13 @@
 ; test_smod.s
-; verifies SMOD sets the dirty bit of the targeted iram slot.
-; the iram regfile always sets bit[16] (dirty) on a CPU write regardless
-; of the byte value, so we just have to ensure SMOD executes targeting
-; slot 4. the cocotb test then reads dirty_bits and asserts bit 4 = 1.
+; verifies SMOD writes the cpu's accumulator into the LOW byte of the
+; targeted iram slot. with the dirty-bit FFs removed for area, the test
+; reads the slot's memory cell directly (via dut.iram.mem[N]) instead of
+; consulting a dirty-bits vector.
+;
+; SMOD slot 2 -> iram[2][7:0] <- A. with A=0xAB the cocotb test then
+; asserts dut.iram.mem[2] & 0xFF == 0xAB.
 
 .page 0
-    LDA #$AB        ; A = 0xAB
-    SMOD 4, $00     ; iram[4][7:0] <- A; dirty_bits[4] becomes 1
-    HLT
+    LDA #$AB        ; slot 0  A = 0xAB
+    SMOD 2, $00     ; slot 1  iram[2][7:0] <- A
+    HLT             ; slot 2

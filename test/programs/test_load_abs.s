@@ -9,7 +9,6 @@
 ;   STY $21   -> dram[0x21] = 0xBB
 ;   LDA #$CC
 ;   HLT
-; cocotb side asserts X, Y, and the two dram bytes.
 
 .data $0010
     .byte $AA, $BB
@@ -18,6 +17,8 @@
     LDX $10         ; slot 0  X <- dram[0x10] = 0xAA
     LDY $11         ; slot 1  Y <- dram[0x11] = 0xBB
     STX $20         ; slot 2  dram[0x20] = 0xAA
-    STY $21         ; slot 3  dram[0x21] = 0xBB
-    LDA #$CC        ; slot 4
-    HLT             ; slot 5
+    STY $21         ; slot 3  dram[0x21] = 0xBB         (page wraps)
+
+.page 1
+    LDA #$CC        ; slot 0
+    HLT             ; slot 1

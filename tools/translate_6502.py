@@ -57,6 +57,10 @@ import argparse
 from pathlib import Path
 from dataclasses import dataclass, field
 
+# pull page geometry from ocpu_asm so the auto-pager stays in sync with
+# whatever the assembler / hardware currently use.
+from ocpu_asm import SLOTS_PER_PAGE  # noqa: E402
+
 
 # -------------------------------------------------------------------------
 # segment layout
@@ -610,14 +614,14 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
     """slot-by-slot packer.
 
     rules:
-      * the cpu naturally wraps from slot 7 to slot 0 of the next page
-        (via `page_interrupt`), so straight-line code spilling across
+      * the cpu naturally wraps from the last slot to slot 0 of the next
+        page (via `page_interrupt`), so straight-line code spilling across
         pages does NOT require any explicit FARJMP. we only insert
         `.page N+1` directives at page boundaries.
       * conditional branches (`BR* target`) are *intra-page only*: their
-        encoded offset is a 3-bit value added to pc within the same
-        page. so before emitting a branch we look ahead to count slots
-        until the target label; if it doesn't fit in the remaining
+        encoded offset is a SLOT_BITS-wide value added to pc within the
+        same page. so before emitting a branch we look ahead to count
+        slots until the target label; if it doesn't fit in the remaining
         slots of the current page, we expand the branch into a 2-slot
         sequence `<inverted-br> __local; FARJMP <target_page>;
         __local:`.  the 2-slot expansion forces the target page to be
@@ -626,8 +630,8 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
       * `JMP target` (unconditional) gets rewritten to `FARJMP <page>`
         when the target ends up on a different page.
       * `JSR target` cross-page is rejected - the cpu only saves the
-        3-bit slot on call, so a cross-page rts cannot reconstruct the
-        right page.
+        slot index (SLOT_BITS wide) on call, so a cross-page rts cannot
+        reconstruct the right page.
 
     label-target invariant: any label that is the target of a cross-page
     branch / jmp must land at slot 0 of its page. we guarantee this by
@@ -644,7 +648,8 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
 
     # pass 1: walk atoms, emitting (page, slot, line, atom). loops only
     # restart from scratch when a new constraint is added that may
-    # invalidate earlier placements.
+    # invalidate earlier placements. retry budget (8) is independent of
+    # page geometry.
     for tryIdx in range(8):
         out_entries: list[tuple[int, int, str, _Atom | None]] = []
         labelPlace: dict[str, tuple[int, int]] = {}
@@ -659,13 +664,13 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
                                 text, atom))
             if consumesSlot:
                 slot += 1
-                if slot == 8:
+                if slot == SLOTS_PER_PAGE:
                     page += 1
                     slot = 0
 
         def padPageWithNops(reason: str):
             nonlocal page, slot
-            while slot < 8:
+            while slot < SLOTS_PER_PAGE:
                 out_entries.append((page, slot,
                                     f"    NOP        ; {reason}", None))
                 slot += 1
@@ -704,7 +709,7 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
                     # which means a native intra-page branch from the
                     # current page can never reach it.
                     ahead = slotsAhead(i + 1, tgtIdx)
-                    if slot + 1 + ahead <= 7:
+                    if slot + 1 + ahead <= SLOTS_PER_PAGE - 1:
                         feasible = True
                 if feasible:
                     addLine(a.text, atom=a, consumesSlot=True)
@@ -719,9 +724,10 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
                 #   slot K   : <inv-br> __brfix
                 #   slot K+1 : FARJMP <tgt_page>
                 #   slot K+2 : __brfix:  (the next real instruction)
-                # so K+1 must be < 7 (else __brfix would wrap to page
-                # K+1 and the inverted branch becomes cross-page).
-                if slot + 2 > 7:
+                # so K+1 must be < SLOTS_PER_PAGE-1 (else __brfix would
+                # wrap to page K+1 and the inverted branch becomes
+                # cross-page).
+                if slot + 2 > SLOTS_PER_PAGE - 1:
                     padPageWithNops("no room for branch bridge")
                 inv = BRANCH_INVERT[a.mnem]
                 skipLbl = f"__brfix_{i:x}"
@@ -742,19 +748,19 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
                 # if target is known to be cross-page (forceSlot0 set),
                 # rewrite directly to FARJMP; cheaper than letting the
                 # placeholder resolver do it.
-                if slot == 8:  # safety; should not happen
+                if slot == SLOTS_PER_PAGE:  # safety; should not happen
                     page += 1; slot = 0
                 addLine(a.text, atom=a, consumesSlot=True)
                 continue
 
             if a.kind == 'jsr':
-                if slot == 8:
+                if slot == SLOTS_PER_PAGE:  # safety
                     page += 1; slot = 0
                 addLine(a.text, atom=a, consumesSlot=True)
                 continue
 
             # plain instruction
-            if slot == 8:
+            if slot == SLOTS_PER_PAGE:
                 page += 1; slot = 0
             addLine(a.text, atom=a, consumesSlot=True)
 
@@ -834,7 +840,7 @@ def autoPageBlocks(codeBuf: list[str], warnings: list[str]) -> list[str]:
             if tp is not None and tp[0] != entryPage:
                 warnings.append(
                     f"JSR {tgt}: caller on page {entryPage}, target on "
-                    f"page {tp[0]}. cpu only stacks the 3-bit slot, so "
+                    f"page {tp[0]}. cpu only stacks the slot index, so "
                     f"cross-page RTS is unsafe. rejecting.")
                 final.append(
                     f"    ; UNSUPPORTED cross-page JSR {tgt}")
@@ -949,7 +955,7 @@ def pass2Codegen(text: str, state: TranslateState, mainEntry: bool = False) -> N
             continue
         translateInstruction(state, m2.group(1), m2.group(2), lineno)
 
-    # cc65 entry-compat: JSR/RTS only saves the 3-bit slot (not the page),
+    # cc65 entry-compat: JSR/RTS only saves the slot index (not the page),
     # so a JSR wrapper would break the moment _main spans pages. instead
     # we walk codeBuf in reverse and rewrite the LAST emitted `RTS` line
     # into `HLT`. control flows linearly through page 0..N and halts at
@@ -975,7 +981,7 @@ def pass2Codegen(text: str, state: TranslateState, mainEntry: bool = False) -> N
     # conditional branches are rewritten as `<inverted-br> __local;
     # FARJMP <target_page>` and re-packed (so the 2-slot expansion is
     # accounted for during placement). cross-page JSR is rejected - our
-    # cpu only saves the 3-bit slot on call, so a cross-page return is
+    # cpu only saves the slot index on call, so a cross-page return is
     # structurally impossible without a software-managed return page.
     pagedBuf = autoPageBlocks(codeBuf, state.warnings)
 

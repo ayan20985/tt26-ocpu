@@ -7,11 +7,7 @@
     LDA #$5A        ; slot 0  A = 0x5A
     NOP             ; slot 1
     NOP             ; slot 2
-    NOP             ; slot 3
-    NOP             ; slot 4
-    NOP             ; slot 5
-    NOP             ; slot 6
-    NOP             ; slot 7  page wrap fires here
+    NOP             ; slot 3  page wrap fires here
 
 .page 1
     STA $50         ; slot 0  dram[0x0050] = 0x5A

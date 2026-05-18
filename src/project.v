@@ -26,16 +26,16 @@
 //   uio_oe[7:0]  = OSPI IO_OE      slave drives outputs only during read-data byte
 //
 // ── Output status flags (FPGA polls these) ───────────────────────────────────
-//   uo_out[0]   = page_interrupt  1-cycle pulse after slot-7 instruction executes
+//   uo_out[0]   = page_interrupt  1-cycle pulse after last-slot instruction executes
 //   uo_out[1]   = page_loading    echo of ui_in[3], confirms CPU is waiting
 //   uo_out[2]   = is_halted       CPU stalled for any reason (page wait / data wait / HLT)
 //   uo_out[3]   = data_req        CPU has a pending data memory transaction
 //   uo_out[7:4] = 0
 //
 // ── OSPI address map (cmd 0x02 = write, 0x03 = read) ─────────────────────────
-//   0x000000–0x00000F  iRAM slot bytes. each slot stores a 16-bit instruction
+//   0x000000–0x000007  iRAM slot bytes. each slot stores a 16-bit instruction
 //                        word as two OSPI-addressable bytes:
-//                          addr[3:1] = slot index (0..7)
+//                          addr[2:1] = slot index (0..3)
 //                          addr[0]   = 0 -> LOW byte (bits 7:0  / immediate)
 //                                      1 -> HIGH byte (bits 15:8 / opcode+sub)
 //                        a full instruction load is two writes: first the LOW
@@ -49,8 +49,12 @@
 //   0xFE0003            data_req read: cpu_mem_wdata  (valid only on writes)
 //   0xFE0100            data_req ack:  write rdata here to unblock CPU
 //                        wdata byte → cpu_mem_rdata, pulses cpu_mem_ready 1 cycle
-//   0xFD0000            dirty_bits[7:0]   slots 0–7 modified by CPU (SMOD)
 //   0xFF0000            page_reg read: current instruction page number
+//
+// NOTE: the formerly-supported 0xFD0000 dirty-bits readback has been removed
+// to save area. the FPGA-side reference implementation must now write back
+// every iRAM slot unconditionally on a page swap; this reclaims FFs and
+// removes a multi-bit broadcast that was contributing to routing congestion.
 
 module tt_um_ocpu (
     input  wire [7:0] ui_in,
@@ -69,7 +73,7 @@ module tt_um_ocpu (
     output wire [7:0] dbg_sp,
     output wire [7:0] dbg_sr,
     output wire [7:0] dbg_ir,
-    output wire [2:0] dbg_pc,
+    output wire [1:0] dbg_pc,
     output wire [7:0] dbg_page
 `endif
 );
@@ -96,24 +100,24 @@ module tt_um_ocpu (
     assign uio_oe  = ospi_io_oe;
 
     // -------------------------------------------------------------------------
-    // iRAM regfile  (8 x 17-bit: bit[16]=dirty, bits[15:0]=instruction word)
+    // iRAM regfile  (4 x 16-bit instruction word)
     // Two write ports: OSPI slave (page load) and CPU (SMOD instruction)
     // Two read ports:  CPU (fetch by PC slot) and OSPI slave (readback)
     // -------------------------------------------------------------------------
-    wire [2:0]  cpu_iram_rd_slot;
-    wire [16:0] cpu_iram_rd_data;
+    wire [1:0]  cpu_iram_rd_slot;
+    wire [15:0] cpu_iram_rd_data;
     wire        cpu_iram_wr_en;
-    wire [2:0]  cpu_iram_wr_slot;
+    wire [1:0]  cpu_iram_wr_slot;
     wire [15:0] cpu_iram_wr_data;
-    wire [7:0]  dirty_bits;      // bit N = slot N was written by CPU since last page load
     wire [15:0] pg_iram_rd_data; // OSPI readback port (FPGA can verify loaded instructions)
 
     // OSPI loads a full 16-bit instruction word in two OSPI byte writes.
     // address[0]=0 writes the LO byte (latched here without touching iRAM),
     // address[0]=1 writes the HI byte and commits {hi, lo_latch} into the
-    // iRAM slot indexed by address[3:1].
+    // iRAM slot indexed by address[2:1]. valid iRAM range is now
+    // 0x000000..0x000007 (4 slots * 2 bytes).
     reg [7:0] iram_lo_latch;
-    wire iram_addr_match = (ospi_mem_addr[23:4] == 20'h00000);  // 0x000000..0x00000F
+    wire iram_addr_match = (ospi_mem_addr[23:3] == 21'h000000);  // 0x000000..0x000007
     wire iram_wr_lo = ospi_mem_write && iram_addr_match && (ospi_mem_addr[0] == 1'b0);
     wire iram_wr_hi = ospi_mem_write && iram_addr_match && (ospi_mem_addr[0] == 1'b1);
 
@@ -128,7 +132,7 @@ module tt_um_ocpu (
         // OSPI write port: commits on the HI-byte write of each slot.
         // wr_pg_data = {hi, lo_latch} reconstructs the full 16-bit word.
         .wr_pg_en    (iram_wr_hi),
-        .wr_pg_slot  (ospi_mem_addr[3:1]),
+        .wr_pg_slot  (ospi_mem_addr[2:1]),
         .wr_pg_data  ({ospi_mem_wdata, iram_lo_latch}),
         // CPU write port (SMOD instruction modifies lower byte of a slot)
         .wr_cpu_en   (cpu_iram_wr_en),
@@ -137,11 +141,9 @@ module tt_um_ocpu (
         // CPU read port (fetch: slot = current PC)
         .rd_slot     (cpu_iram_rd_slot),
         .rd_data     (cpu_iram_rd_data),
-        // dirty-bit vector output
-        .dirty_bits  (dirty_bits),
-        // OSPI readback port. note slot index is addr[3:1]; the LO/HI byte
+        // OSPI readback port. note slot index is addr[2:1]; the LO/HI byte
         // selection happens in the rdata-mux below using addr[0].
-        .rd_pg_slot  (ospi_mem_addr[3:1]),
+        .rd_pg_slot  (ospi_mem_addr[2:1]),
         .rd_pg_data  (pg_iram_rd_data)
     );
 
@@ -179,7 +181,7 @@ module tt_um_ocpu (
     // page_interrupt is a 1-cycle pulse from CPU after slot-7 finishes executing.
     // -------------------------------------------------------------------------
     wire [7:0]  page_reg;        // from CPU: current page register value
-    wire        page_interrupt;  // from CPU: slot-7 instruction just finished
+    wire        page_interrupt;  // from CPU: last-slot instruction just finished
 
     // page handshake also lives on the dedicated input bank to keep it
     // independent of the OSPI data bus traffic.
@@ -258,9 +260,9 @@ module tt_um_ocpu (
             ospi_mem_rdata_out <= 8'h00;
         end else if (ospi_mem_read) begin
             casez (ospi_mem_addr)
-                // iRAM readback: addr 0x000000-0x00000F.
-                //   addr[3:1] = slot, addr[0] = lo (0) / hi (1) byte select
-                24'b0000_0000_0000_0000_0000_????:
+                // iRAM readback: addr 0x000000-0x000007.
+                //   addr[2:1] = slot, addr[0] = lo (0) / hi (1) byte select
+                24'b0000_0000_0000_0000_0000_0???:
                     ospi_mem_rdata_out <= ospi_mem_addr[0]
                                           ? pg_iram_rd_data[15:8]
                                           : pg_iram_rd_data[7:0];
@@ -271,8 +273,8 @@ module tt_um_ocpu (
                 24'hFE0002: ospi_mem_rdata_out <= cpu_mem_addr[7:0];     // addr lo
                 24'hFE0003: ospi_mem_rdata_out <= cpu_mem_wdata;         // write data
 
-                // dirty bits: which iRAM slots were modified by CPU since last page load
-                24'hFD0000: ospi_mem_rdata_out <= dirty_bits;            // slots 0-7
+                // (0xFD0000 dirty_bits register was here. removed for area;
+                // FPGA-side writeback is now unconditional - see header.)
 
                 // current instruction page number
                 24'hFF0000: ospi_mem_rdata_out <= page_reg;
@@ -290,7 +292,7 @@ module tt_um_ocpu (
     //   [2] is_halted       - CPU not making forward progress for any reason
     //   [3] data_req        - CPU waiting for a data memory transaction to be serviced
     // -------------------------------------------------------------------------
-    assign uo_out[0] = page_interrupt;  // 1-cycle pulse: slot-7 executed, load next page
+    assign uo_out[0] = page_interrupt;  // 1-cycle pulse: last slot executed, load next page
     assign uo_out[1] = page_loading;    // echo: asserted while CPU waits for page load
     assign uo_out[2] = is_halted;       // CPU stalled (page wait / data wait / HLT)
     assign uo_out[3] = cpu_mem_req;     // CPU has pending data memory request

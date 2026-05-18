@@ -1,6 +1,8 @@
 ; sample 6502 program for the translator pipeline end-to-end test.
-; deliberately tiny so the microcode expansion still fits in one OCPU
-; page (8 slots). exercises immediate, store, INC (microcoded), BRK->HLT.
+; the INC microcode expansion (LDA / ADC / STA) plus the surrounding ops
+; spills past one 4-slot OCPU page, so the auto-pager in translate_6502.py
+; will insert page boundaries automatically. exercises immediate, store,
+; INC (microcoded), BRK->HLT.
 ;
 ; behaviour:
 ;   dram[0x40] starts at 0

@@ -6,11 +6,14 @@
 // OSPI Protocol (ASIC is slave, external FPGA is master)
 // ======================================================
 // The external FPGA drives the OSPI interface to:
-//   1. Load instruction pages into iRAM (8 instructions per page, 2 bytes each)
-//   2. Monitor the page_interrupt flag (CPU finished slot 7)
+//   1. Load instruction pages into iRAM (4 instructions per page, 2 bytes each)
+//   2. Monitor the page_interrupt flag (CPU finished the last slot of a page)
 //   3. Coordinate page transitions via page_done handshake
 //   4. Service CPU data memory requests via address-mapped registers
-//   5. Read dirty bits before a page swap so it can write modified slots back
+//   5. Unconditionally write every slot of the previous page back to its
+//      DRAM-resident program image before each page swap (the per-slot
+//      dirty-bit FFs were removed for area, so the chip no longer
+//      publishes a dirty vector at 0xFD0000)
 
 // Pin Mapping (from ASIC perspective)
 // ====================================
@@ -31,7 +34,7 @@
 //   uio_out[7:0] = IO_O[7:0] (data, from ASIC to master)
 //   uio_oe[7:0]  = output-enable, ASIC drives only during byte 4 of a read
 //
-//   uo_out[0] = page_interrupt (1-cycle pulse: slot-7 instruction just finished)
+//   uo_out[0] = page_interrupt (1-cycle pulse: last-slot instruction just finished)
 //   uo_out[1] = page_loading   (echo of ui_in[3], confirms CPU is waiting)
 //   uo_out[2] = is_halted      (CPU stalled for any reason)
 //   uo_out[3] = data_req       (CPU is waiting for a data memory transaction)
@@ -43,8 +46,8 @@
 
 // Address Space
 // =============
-//   0x000000–0x00000F  iRAM slot bytes (16 addresses for 8 slots * 2 bytes)
-//                        addr[3:1] = slot index (0..7)
+//   0x000000–0x000007  iRAM slot bytes (8 addresses for 4 slots * 2 bytes)
+//                        addr[2:1] = slot index (0..3)
 //                        addr[0]   = 0 -> LOW byte  (immediate, bits 7:0)
 //                                    1 -> HIGH byte (opcode+sub, bits 15:8)
 //                      a full instruction load is two writes: LOW byte first
@@ -56,8 +59,11 @@
 //   0xFE0003           data_req wdata:   cpu_mem_wdata (valid only on writes)
 //   0xFE0100           data_req ACK: write rdata here to unblock CPU
 //                        (data byte -> cpu_mem_rdata, pulses cpu_mem_ready 1 cycle)
-//   0xFD0000           dirty_bits[7:0] (slot N is dirty if bit N == 1)
 //   0xFF0000           page_reg (current instruction page number)
+//
+// NOTE: 0xFD0000 (dirty_bits) was removed for area. unmapped reads now
+// return 0xFF, which the reference page_controller.v interprets as
+// "every slot is dirty" and falls into a full unconditional writeback.
 
 // Transaction Format
 // ==================
@@ -75,20 +81,21 @@
 
 // Paging Protocol
 // ===============
-// 1. CPU executes code from iRAM (8 instructions, PC 0..7)
-// 2. After the slot-7 instruction finishes executing:
+// 1. CPU executes code from iRAM (4 instructions, PC 0..3)
+// 2. After the last-slot instruction finishes executing:
 //    - page_interrupt asserts on uo_out[0] for 1 cycle
 //    - CPU halts in ST_PAGE_REQ state; is_halted goes high
 // 3. External FPGA sees page_interrupt and (optionally) reads page_reg
 //    via OSPI read of 0xFF0000 to know which page just finished.
-// 4. FPGA reads dirty_bits at 0xFD0000. For each bit N set, the FPGA must
-//    read iRAM slot N (OSPI read of 0x00000{N*2+0} for LO and 0x00000{N*2+1}
-//    for HI) and write both bytes back to external DRAM at offset
-//    (current_page * 16 + slot * 2 + byte_idx).
+// 4. FPGA writes the previous page back unconditionally. for each slot
+//    in 0..3, OSPI-read 0x00000{slot*2+0} for LO and 0x00000{slot*2+1}
+//    for HI, then store both bytes into external DRAM at offset
+//    (current_page * 8 + slot * 2 + byte_idx). this used to be a
+//    dirty-bit-gated scan but the dirty FFs were removed for area.
 // 5. FPGA asserts page_loading on ui_in[3] (tells CPU: loading in progress)
-// 6. FPGA loads 8 instructions via OSPI WRITE transactions. each slot needs
-//    TWO writes:
-//      for slot in 0..7:
+// 6. FPGA loads 4 instructions via OSPI WRITE transactions. each slot
+//    needs TWO writes:
+//      for slot in 0..3:
 //        write LO byte to addr 0x00000{slot*2+0}
 //        write HI byte to addr 0x00000{slot*2+1}
 //    (the HI write is what actually commits the slot into iRAM.)

@@ -35,16 +35,15 @@ module tb;
 
     // -- iram write port from the page loader --
     reg         ext_iram_wr_en;
-    reg [2:0]   ext_iram_wr_slot;
+    reg [1:0]   ext_iram_wr_slot;
     reg [15:0]  ext_iram_wr_data;
 
     // -- iram wires shared with the cpu --
-    wire [2:0]  cpu_iram_rd_slot;
-    wire [16:0] cpu_iram_rd_data;
+    wire [1:0]  cpu_iram_rd_slot;
+    wire [15:0] cpu_iram_rd_data;
     wire        cpu_iram_wr_en;
-    wire [2:0]  cpu_iram_wr_slot;
+    wire [1:0]  cpu_iram_wr_slot;
     wire [15:0] cpu_iram_wr_data;
-    wire [7:0]  dirty_bits;
 
     iram_regfile iram (
         .clk         (clk),
@@ -60,10 +59,8 @@ module tb;
         // cpu read port
         .rd_slot     (cpu_iram_rd_slot),
         .rd_data     (cpu_iram_rd_data),
-        // dirty-bit vector (observed by python so we can verify SMOD)
-        .dirty_bits  (dirty_bits),
         // unused page-readback port (only project.v uses it for OSPI readback)
-        .rd_pg_slot  (3'b0),
+        .rd_pg_slot  (2'b0),
         .rd_pg_data  (/* unused */)
     );
 

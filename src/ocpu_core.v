@@ -20,17 +20,25 @@ module ocpu_core (
 	mem_rdata,
 	page_reg
 );
+	// page geometry. SLOT_BITS must match iram_regfile.v. shrinking from
+	// 3 -> 2 cuts the iRAM in half and collapses the slot-fanout that was
+	// dominating routing on the 1x2 tile.
+	localparam integer SLOT_BITS      = 2;
+	localparam integer SLOTS_PER_PAGE = 1 << SLOT_BITS;
+	localparam [SLOT_BITS-1:0] LAST_SLOT  = SLOTS_PER_PAGE - 1;
+	localparam [SLOT_BITS-1:0] FIRST_SLOT = {SLOT_BITS{1'b0}};
+
 	input wire clk;
 	input wire rst_n;
 	input wire run_enable;
 	output wire is_halted;
 	input wire page_done;
 	input wire page_loading;
-	output wire page_interrupt;  // pulse: page boundary reached (PC==7)
-	output wire [2:0] iram_rd_slot;
-	input wire [16:0] iram_rd_data;
+	output wire page_interrupt;  // pulse: page boundary reached (PC==LAST_SLOT)
+	output wire [SLOT_BITS-1:0] iram_rd_slot;
+	input wire [15:0] iram_rd_data;
 	output reg iram_wr_en;
-	output reg [2:0] iram_wr_slot;
+	output reg [SLOT_BITS-1:0] iram_wr_slot;
 	output reg [15:0] iram_wr_data;
 	output reg mem_req;
 	output reg mem_rw;
@@ -44,7 +52,7 @@ module ocpu_core (
 	reg [7:0] y;
 	reg [7:0] sp;
 	reg [4:0] sr;  // reduced: [4]=I, [3]=unused, [2]=N, [1]=Z, [0]=C
-	reg [2:0] pc;  // 3-bit PC indexes iRAM[0..7] (8-slot page)
+	reg [SLOT_BITS-1:0] pc;  // 2-bit PC indexes iRAM[0..3] (4-slot page)
 	reg [7:0] data_page;
 	reg [3:0] ir_op;
 	reg [3:0] ir_sub;
@@ -131,7 +139,7 @@ module ocpu_core (
 	                || (state == ST_IND_Y1)   || (state == ST_IND_Y2);
 	reg page_interrupt_r;
 	assign page_interrupt = page_interrupt_r;
-	reg wrap_pending;  // set when slot 7 is fetched; triggers page swap after execute
+	reg wrap_pending;  // set when LAST_SLOT is fetched; triggers page swap after execute
 	reg [8:0] alu_result;
 	reg [7:0] alu_op_b;
 	// unified ALU: a single case on the low 3 bits drives one adder/logic block.
@@ -178,7 +186,7 @@ module ocpu_core (
 	always @(posedge clk or negedge rst_n)
 		if (!rst_n) begin
 			state <= ST_RESET;
-			pc <= 3'h0;
+			pc <= FIRST_SLOT;
 			page_reg <= 8'h00;
 			data_page <= 8'h00;
 			a <= 8'h00;
@@ -191,7 +199,7 @@ module ocpu_core (
 			mem_addr <= 16'h0000;
 			mem_wdata <= 8'h00;
 			iram_wr_en <= 0;
-			iram_wr_slot <= 3'h0;
+			iram_wr_slot <= FIRST_SLOT;
 			iram_wr_data <= 16'h0000;
 			ir_op <= 4'h0;
 			ir_sub <= 4'h0;
@@ -215,7 +223,7 @@ module ocpu_core (
 					end
 				ST_PAGE_WAIT:
 					if (page_done) begin
-						pc <= 3'h0;
+						pc <= FIRST_SLOT;
 						wrap_pending <= 0;
 						state <= ST_FETCH;
 					end
@@ -223,7 +231,7 @@ module ocpu_core (
 					if (!run_enable)
 						state <= ST_HALTED;
 					else if (wrap_pending) begin
-						// previous slot-7 instruction returned here without passing through ST_EXECUTE
+						// previous LAST_SLOT instruction returned here without passing through ST_EXECUTE
 						wrap_pending <= 0;
 						page_interrupt_r <= 1;
 						state <= ST_PAGE_REQ;
@@ -231,12 +239,12 @@ module ocpu_core (
 						ir_op <= iram_rd_data[15:12];
 						ir_sub <= iram_rd_data[11:8];
 						ir_imm <= iram_rd_data[7:0];
-						if (pc == 3'h7) begin
-							// slot 7: fetch and execute it, wrap PC, page-swap after execute
-							pc <= 3'h0;
+						if (pc == LAST_SLOT) begin
+							// last slot: fetch and execute it, wrap PC, page-swap after execute
+							pc <= FIRST_SLOT;
 							wrap_pending <= 1;
 						end else begin
-							pc <= pc + 1;
+							pc <= pc + 1'b1;
 						end
 						state <= ST_DECODE;
 					end
@@ -390,7 +398,11 @@ module ocpu_core (
 						mem_req <= 1;
 						mem_rw <= 1;
 						mem_addr <= {data_page, sp};
-						mem_wdata <= (ir_op == OP_JSR ? {5'h00, pc + 3'h1} : a);
+						// JSR pushes pc+1 (where to resume), zero-padded into the
+						// 8-bit memory byte. SLOT_BITS<=8 by construction.
+						mem_wdata <= (ir_op == OP_JSR
+						              ? {{(8-SLOT_BITS){1'b0}}, pc + 1'b1}
+						              : a);
 					end
 				ST_POP:
 					if (mem_ready && mem_req) begin
@@ -398,7 +410,7 @@ module ocpu_core (
 						mem_req <= 0;
 						case (ir_op)
 							OP_RTS: begin
-								pc <= mem_rdata[2:0];
+								pc <= mem_rdata[SLOT_BITS-1:0];
 								state <= ST_FETCH;
 							end
 							OP_REG: begin
@@ -468,9 +480,9 @@ module ocpu_core (
 							end
 						OP_BR:
 							if (branch_taken && !wrap_pending)
-								pc <= pc + ir_imm[2:0];
-						OP_JMP: if (!wrap_pending) pc <= ir_imm[2:0];
-						OP_JSR: if (!wrap_pending) pc <= ir_imm[2:0];
+								pc <= pc + ir_imm[SLOT_BITS-1:0];
+						OP_JMP: if (!wrap_pending) pc <= ir_imm[SLOT_BITS-1:0];
+						OP_JSR: if (!wrap_pending) pc <= ir_imm[SLOT_BITS-1:0];
 						OP_RTS:
 							;
 						OP_FARJMP:
@@ -532,7 +544,7 @@ module ocpu_core (
 							endcase
 						OP_SMOD: begin
 							iram_wr_en <= 1;
-							iram_wr_slot <= ir_sub[2:0];
+							iram_wr_slot <= ir_sub[SLOT_BITS-1:0];
 							iram_wr_data <= {iram_rd_data[15:8], a};
 						end
 						OP_SYS:

@@ -14,6 +14,6 @@
     .byte $CC               ; target byte at (base + 2)
 
 .page 0
-    LDY #$02                ; Y = 2
-    LDA ($20),Y             ; A = dram[ dram[0x20..0x21] + Y ] = dram[0x42] = 0xCC
-    HLT
+    LDY #$02                ; slot 0  Y = 2
+    LDA ($20),Y             ; slot 1  A = dram[ dram[0x20..0x21] + Y ] = 0xCC
+    HLT                     ; slot 2

@@ -7,16 +7,32 @@
 // store (modelled here as two simple memory ports the integrator fills
 // with their actual storage backend).
 //
+// PROTOCOL NOTE: the chip used to expose a `dirty_bits[7:0]` readback at
+// 0xFD0000 with one bit per iRAM slot. that register has been removed
+// for area; the chip now returns 0x?? (defaults to 0xFF for unmapped
+// reads) at that address. this controller still issues the OSPI read of
+// 0xFD0000 as the first step of its writeback scan - because the chip
+// returns 0xFF, all (now 4) slot bits look dirty and the controller
+// falls into a full unconditional writeback, which is the new contract.
+//
+// CHIP GEOMETRY: the iRAM is now 4 slots wide (was 8); each slot still
+// stores a 16-bit instruction word, addressable as TWO OSPI bytes at
+// addr {slot[1:0], byte_select}. this reference controller is a
+// deliberately-simple FSM that treats one slot == one prog_store byte;
+// integrators driving the real chip need to do TWO OSPI transactions
+// per slot (LO byte then HI byte).
+//
 // behaviour
 // ---------
 //   * watches `page_interrupt` from the chip. on its rising edge the chip
-//     has just executed slot 7 of `page_current` and is now sitting in
-//     ST_PAGE_REQ waiting for a fresh page.
-//   * scans `dirty_bits` (OSPI read of 0xFD0000). for each set bit N it
-//     reads slot N back (OSPI read of 0x00000N) and writes the byte into
-//     the program-store at offset (page_current * 8 + N).
-//   * asserts `page_loading` on the chip's `ui_in[3]` and writes 8 OSPI
-//     transactions to 0x000000..0x000007 with the bytes from the
+//     has just executed the last slot of `page_current` and is now sitting
+//     in ST_PAGE_REQ waiting for a fresh page.
+//   * reads 0xFD0000 (now obsolete) once. masks to the active slot range
+//     and walks the dirty vector: for each set bit N it reads slot N back
+//     and writes the byte into the program-store at offset
+//     (page_current * SLOTS_PER_PAGE + N).
+//   * asserts `page_loading` on the chip's `ui_in[3]` and issues OSPI
+//     transactions to 0x000000..0x000003 with the bytes from the
 //     program-store entry for `page_next`.
 //   * pulses `page_done` on `ui_in[2]` and returns to idle.
 //
@@ -51,8 +67,8 @@ module page_controller (
     input  wire [7:0]  spi_rdata,
     input  wire        spi_ack,
 
-    // program backing store (one byte per slot; 256 pages * 8 slots)
-    output reg  [10:0] prog_addr,      // {page[7:0], slot[2:0]}
+    // program backing store (one byte per slot; 256 pages * SLOTS_PER_PAGE)
+    output reg  [9:0]  prog_addr,      // {page[7:0], slot[1:0]}
     input  wire [7:0]  prog_rdata,
     output reg  [7:0]  prog_wdata,
     output reg         prog_we,
@@ -69,6 +85,11 @@ module page_controller (
     input  wire [7:0]  page_current,
     input  wire [7:0]  page_next
 );
+
+    // page geometry. must match SLOT_BITS in src/iram_regfile.v.
+    localparam integer SLOT_BITS      = 2;
+    localparam integer SLOTS_PER_PAGE = 1 << SLOT_BITS;
+    localparam [SLOT_BITS-1:0] LAST_SLOT = SLOTS_PER_PAGE - 1;
 
     // -------------------------------------------------------------------
     // states
@@ -97,12 +118,12 @@ module page_controller (
     reg [4:0] state;
 
     // captures used across phases
-    reg [7:0]  dirty;
-    reg [2:0]  slot;
-    reg        rw_q;
-    reg [15:0] daddr_q;
-    reg [7:0]  wdata_q;
-    reg [7:0]  rdata_q;
+    reg [SLOTS_PER_PAGE-1:0] dirty;
+    reg [SLOT_BITS-1:0]      slot;
+    reg                      rw_q;
+    reg [15:0]               daddr_q;
+    reg [7:0]                wdata_q;
+    reg [7:0]                rdata_q;
 
     // rising-edge detector for page_interrupt
     reg page_int_q;
@@ -112,20 +133,16 @@ module page_controller (
         else        page_int_q <= page_interrupt;
     end
 
-    // priority encoder: lowest set bit of an 8-bit vector
-    function automatic [2:0] lowest_set;
-        input [7:0] d;
+    // priority encoder: lowest set bit of the dirty vector.
+    function automatic [SLOT_BITS-1:0] lowest_set;
+        input [SLOTS_PER_PAGE-1:0] d;
         begin
             casez (d)
-                8'b???????1: lowest_set = 3'd0;
-                8'b??????10: lowest_set = 3'd1;
-                8'b?????100: lowest_set = 3'd2;
-                8'b????1000: lowest_set = 3'd3;
-                8'b???10000: lowest_set = 3'd4;
-                8'b??100000: lowest_set = 3'd5;
-                8'b?1000000: lowest_set = 3'd6;
-                8'b10000000: lowest_set = 3'd7;
-                default:     lowest_set = 3'd0;
+                4'b???1: lowest_set = 2'd0;
+                4'b??10: lowest_set = 2'd1;
+                4'b?100: lowest_set = 2'd2;
+                4'b1000: lowest_set = 2'd3;
+                default: lowest_set = 2'd0;
             endcase
         end
     endfunction
@@ -142,14 +159,14 @@ module page_controller (
             spi_rw       <= 1'b0;
             spi_addr     <= 24'h0;
             spi_wdata    <= 8'h0;
-            prog_addr    <= 11'h0;
+            prog_addr    <= 10'h0;
             prog_wdata   <= 8'h0;
             prog_we      <= 1'b0;
             data_addr    <= 16'h0;
             data_wdata   <= 8'h0;
             data_we      <= 1'b0;
-            dirty        <= 8'h0;
-            slot         <= 3'h0;
+            dirty        <= {SLOTS_PER_PAGE{1'b0}};
+            slot         <= {SLOT_BITS{1'b0}};
             rw_q         <= 1'b0;
             daddr_q      <= 16'h0;
             wdata_q      <= 8'h0;
@@ -181,18 +198,21 @@ module page_controller (
                 // -- writeback scan ---------------------------------------
                 S_WB_RD_DIRTY: if (spi_ack) begin
                     spi_req <= 1'b0;
-                    dirty   <= spi_rdata;
+                    // chip no longer publishes dirty_bits at 0xFD0000; the
+                    // read returns 0xFF (default for unmapped). mask to the
+                    // SLOTS_PER_PAGE valid bits so the scan walks every slot.
+                    dirty   <= spi_rdata[SLOTS_PER_PAGE-1:0];
                     state   <= S_WB_PICK;
                 end
 
                 S_WB_PICK: begin
-                    if (dirty == 8'h00) begin
+                    if (dirty == {SLOTS_PER_PAGE{1'b0}}) begin
                         state <= S_LD_RAISE;
                     end else begin
                         slot     <= lowest_set(dirty);
                         spi_req  <= 1'b1;
                         spi_rw   <= 1'b0;
-                        spi_addr <= {21'h0, lowest_set(dirty)};
+                        spi_addr <= {{(24-SLOT_BITS){1'b0}}, lowest_set(dirty)};
                         state    <= S_WB_RD_SLOT;
                     end
                 end
@@ -209,8 +229,8 @@ module page_controller (
                 // -- load new page ----------------------------------------
                 S_LD_RAISE: begin
                     page_loading <= 1'b1;
-                    slot         <= 3'd0;
-                    prog_addr    <= {page_next, 3'd0};
+                    slot         <= {SLOT_BITS{1'b0}};
+                    prog_addr    <= {page_next, {SLOT_BITS{1'b0}}};
                     state        <= S_LD_FETCH;
                 end
 
@@ -222,18 +242,18 @@ module page_controller (
                 S_LD_WRITE: begin
                     spi_req   <= 1'b1;
                     spi_rw    <= 1'b1;
-                    spi_addr  <= {21'h0, slot};
+                    spi_addr  <= {{(24-SLOT_BITS){1'b0}}, slot};
                     spi_wdata <= prog_rdata;
                     state     <= S_LD_NEXT;
                 end
 
                 S_LD_NEXT: if (spi_ack) begin
                     spi_req <= 1'b0;
-                    if (slot == 3'd7) begin
+                    if (slot == LAST_SLOT) begin
                         state <= S_LD_DONE;
                     end else begin
-                        slot      <= slot + 3'd1;
-                        prog_addr <= {page_next, slot + 3'd1};
+                        slot      <= slot + 1'b1;
+                        prog_addr <= {page_next, slot + 1'b1};
                         state     <= S_LD_FETCH;
                     end
                 end

@@ -6,7 +6,7 @@ through tb_chip.v. validates the silicon-side OSPI slave end-to-end:
 
   * new pin map (SCK/CS_N/page_done/page_loading on ui_in[0..3])
   * CS_N active-low polarity fix in ospi_memory.v
-  * iRAM byte-pair loading (addr[0]=LO/HI, addr[3:1]=slot)
+  * iRAM byte-pair loading (addr[0]=LO/HI, addr[2:1]=slot)
   * page-handshake protocol on real pins
 
 this is the lowest-level "does the chip work over OSPI" test. the
@@ -29,6 +29,9 @@ import ocpu_asm  # noqa: E402
 
 CLOCK_PERIOD_NS = 40   # 25 MHz (matches config.json CLOCK_PERIOD)
 SCK_HALF_CYCLES = 4    # clk cycles per SCK half-period
+
+# matches SLOT_BITS in src/iram_regfile.v / src/ocpu_core.v.
+SLOTS_PER_PAGE = 4
 
 
 # -------------------------------------------------------------------------
@@ -136,9 +139,9 @@ class ChipOspiMaster:
         await self.write(hiAddr, hi)
 
     async def loadPage(self, instrs: list[int]) -> None:
-        """Load a full 8-slot page. pads with NOPs if fewer than 8."""
+        """Load a full SLOTS_PER_PAGE-slot page. pads with NOPs as needed."""
         nop = ocpu_asm.NOP_WORD
-        page = (instrs + [nop] * 8)[:8]
+        page = (instrs + [nop] * SLOTS_PER_PAGE)[:SLOTS_PER_PAGE]
         # tell the chip we're loading (asserts page_loading on ui_in[3])
         self.setPageLoading(1)
         await ClockCycles(self.dut.clk, 2)
@@ -161,7 +164,7 @@ async def test_chip_ospi_load_and_run(dut):
     consisting of `LDA #$5A; HLT` over real OSPI bursts, verify the
     chip executes and asserts is_halted (uo_out[2])."""
 
-    cocotb.start_soon(Clock(dut.clk, CLOCK_PERIOD_NS, units='ns').start())
+    cocotb.start_soon(Clock(dut.clk, CLOCK_PERIOD_NS, unit='ns').start())
 
     m = ChipOspiMaster(dut)
     m.initSignals()
@@ -204,20 +207,21 @@ async def test_chip_ospi_load_and_run(dut):
 
 @cocotb.test()
 async def test_chip_ospi_readback(dut):
-    """Write 8 distinct 16-bit instruction words into iRAM via OSPI
-    write bursts, then read each byte back via OSPI read bursts and
-    verify all 16 bytes match. exercises both the byte-pair write
-    path AND the iRAM->OSPI readback mux."""
+    """Write SLOTS_PER_PAGE distinct 16-bit instruction words into iRAM via
+    OSPI write bursts, then read each byte back via OSPI read bursts and
+    verify the bytes match. exercises both the byte-pair write path AND
+    the iRAM->OSPI readback mux."""
 
-    cocotb.start_soon(Clock(dut.clk, CLOCK_PERIOD_NS, units='ns').start())
+    cocotb.start_soon(Clock(dut.clk, CLOCK_PERIOD_NS, unit='ns').start())
 
     m = ChipOspiMaster(dut)
     m.initSignals()
     await m.releaseReset(20)
 
-    # 8 arbitrary 16-bit words with distinct hi/lo bytes
-    words = [0x1234, 0x5678, 0x9ABC, 0xDEF0,
-             0x0F1E, 0x2D3C, 0x4B5A, 0x6978]
+    # SLOTS_PER_PAGE arbitrary 16-bit words with distinct hi/lo bytes
+    all_words = [0x1234, 0x5678, 0x9ABC, 0xDEF0,
+                 0x0F1E, 0x2D3C, 0x4B5A, 0x6978]
+    words = all_words[:SLOTS_PER_PAGE]
 
     # hold page_loading high so the chip stays in ST_PAGE_WAIT-ish region
     # and doesn't try to start executing partially-loaded code mid-test.
@@ -227,7 +231,7 @@ async def test_chip_ospi_readback(dut):
     for slot, w in enumerate(words):
         await m.writeSlot(slot, w)
 
-    # now read every byte back. addr[3:1]=slot, addr[0]=lo(0)/hi(1).
+    # now read every byte back. addr[2:1]=slot, addr[0]=lo(0)/hi(1).
     for slot, expected in enumerate(words):
         lo = await m.read((slot << 1) | 0)
         hi = await m.read((slot << 1) | 1)
@@ -236,37 +240,38 @@ async def test_chip_ospi_readback(dut):
             f"iRAM slot {slot} readback mismatch: got 0x{got:04x}, "
             f"expected 0x{expected:04x} (lo=0x{lo:02x}, hi=0x{hi:02x})"
         )
-    dut._log.info("all 8 slots verified end-to-end over OSPI write+read")
+    dut._log.info(
+        f"all {SLOTS_PER_PAGE} slots verified end-to-end over OSPI "
+        f"write+read")
 
 
 @cocotb.test()
 async def test_chip_smod_writeback(dut):
-    """Validate the dirty-bit writeback contract over real OSPI:
-        1. load a tiny program that does LDA #$A5; SMOD slot 4; HLT
+    """Validate the SMOD writeback contract over real OSPI:
+        1. load a tiny program that does LDA #$A5; SMOD slot 2; HLT
         2. let it run to HLT
-        3. OSPI-read 0xFD0000 (dirty_bits) and assert bit 4 is set
-        4. OSPI-read the LO/HI bytes of iRAM slot 4 and assert SMOD
+        3. OSPI-read the LO/HI bytes of iRAM slot 2 and assert SMOD
            rewrote the low byte to 0xA5 (the value of A).
 
-    this exercises the full writeback path the external FPGA uses to
-    persist modified instruction pages back to its program store."""
+    this exercises the full readback path the external FPGA uses to
+    persist modified instruction pages back to its program store. note
+    the per-slot dirty-bit FFs were removed for area; the FPGA reference
+    model now writes back every slot unconditionally on each page swap,
+    so there is no longer a 0xFD0000 readback to consult."""
 
-    cocotb.start_soon(Clock(dut.clk, CLOCK_PERIOD_NS, units='ns').start())
+    cocotb.start_soon(Clock(dut.clk, CLOCK_PERIOD_NS, unit='ns').start())
 
     m = ChipOspiMaster(dut)
     m.initSignals()
     await m.releaseReset(20)
 
     # build the program. SMOD takes a slot index in its imm field and
-    # writes A into the LOW byte of that slot. we pick slot 4 because
-    # it's far away from the HLT (slot 2) and the LDA (slot 0).
-    # SMOD <slot>, <imm>: the CPU writes A into the LOW byte of iram[slot].
-    # the imm field is a placeholder/value the assembler emits but the CPU
-    # ignores at run time - A is the actual source.
+    # writes A into the LOW byte of that slot. with 4-slot pages we pick
+    # slot 2 (between LDA at slot 0 and HLT at slot 3, leaving room).
     src = (
         ".page 0\n"
         "LDA #$A5\n"
-        "SMOD 4, $00\n"
+        "SMOD 2, $00\n"
         "HLT\n"
     )
     tmpPath = os.path.join(HERE, '_tmp_chip_smod.s')
@@ -277,10 +282,10 @@ async def test_chip_smod_writeback(dut):
     finally:
         os.unlink(tmpPath)
     page0 = asm.pageWords()[0]
-    original_slot4 = page0[4]  # should be NOP after assembly
+    original_slot2 = page0[2]  # the SMOD instruction word itself
     dut._log.info(
         f"page0 = {[f'{w:04x}' for w in page0]} "
-        f"(slot 4 starts as 0x{original_slot4:04x})"
+        f"(slot 2 starts as 0x{original_slot2:04x})"
     )
 
     await m.loadPage(page0)
@@ -294,14 +299,7 @@ async def test_chip_smod_writeback(dut):
     else:
         raise AssertionError("chip did not reach HLT within deadline")
 
-    # OSPI-read dirty_bits at 0xFD0000
-    dirty = await m.read(0xFD0000)
-    dut._log.info(f"dirty_bits over OSPI = 0x{dirty:02x}")
-    assert (dirty >> 4) & 1, (
-        f"dirty bit 4 should be set after SMOD; got dirty=0x{dirty:02x}"
-    )
-
-    # OSPI-read iRAM slot 4. the SMOD contract is:
+    # OSPI-read iRAM slot 2. the SMOD contract is:
     #   * the LOW byte of the target slot is overwritten with A (here 0xA5)
     #   * the HIGH byte is concurrently overwritten with whatever
     #     iram_rd_data[15:8] is at the time the SMOD executes - that's
@@ -309,14 +307,14 @@ async def test_chip_smod_writeback(dut):
     #     not the target slot. this is a known CPU quirk: SMOD is
     #     primarily a self-modify hook for the LOW byte (the imm field
     #     of the instruction), and we ignore the HI side-effect.
-    lo = await m.read((4 << 1) | 0)
-    hi = await m.read((4 << 1) | 1)
+    lo = await m.read((2 << 1) | 0)
+    hi = await m.read((2 << 1) | 1)
     new_word = (hi << 8) | lo
     assert lo == 0xA5, (
-        f"SMOD should have rewritten slot-4 LO to 0xA5 but got 0x{lo:02x} "
+        f"SMOD should have rewritten slot-2 LO to 0xA5 but got 0x{lo:02x} "
         f"(full readback 0x{new_word:04x})"
     )
     dut._log.info(
-        f"SMOD writeback OK: slot 4 LO=0x{lo:02x} (HI=0x{hi:02x} carries the "
-        f"next-fetch slot's HI byte, dirty bit set)"
+        f"SMOD writeback OK: slot 2 LO=0x{lo:02x} (HI=0x{hi:02x} carries "
+        f"the next-fetch slot's HI byte)"
     )
