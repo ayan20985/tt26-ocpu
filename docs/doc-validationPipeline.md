@@ -2,7 +2,6 @@
 end-to-end test infrastructure for the tt26-ocpu cpu core.
 
 ## scope
-
 the validation pipeline has two layers:
 
 1. cocotb cpu-validation tests under `test/`. these instantiate
