@@ -70,5 +70,15 @@
   "MAGIC_DEF_LABELS": 0,
 
   "//": "Only export pin area in LEF (without any connected nets)",
-  "MAGIC_WRITE_LEF_PINONLY": 1
+  "MAGIC_WRITE_LEF_PINONLY": 1,
+
+  "VERILOG FILES BLACKBOX":["dir::macros/name.v"],
+  "EXTRA_LEFS": ["dir::macros/name.lef"],
+  "EXTRA_GDS_FILES": ["dir::macros/name.gds"],
+  "MACRO_PLACEMENT_CFG": "dir::macro_placement.cfg",
+  "FP_MACRO_HORIZONTAL_HALO": 0.5,
+  "FP_MACRO_VERTICAL_HALO": 0.5,
+  "FP_PDN_MACRO_HORIZONTAL_HALO": 0.5,
+  "FP_PDN_MACRO_VERTICAL_HALO": 0.5,
+  "GRT_MACRO_EXTENSION":0
 }

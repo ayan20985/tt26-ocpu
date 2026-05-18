@@ -78,6 +78,8 @@ module tt_um_ocpu (
 `endif
 );
 
+    name name0();
+
     // -------------------------------------------------------------------------
     // OSPI slave pins
     // uio is bidirectional: master drives in, slave drives out via uio_out/uio_oe
