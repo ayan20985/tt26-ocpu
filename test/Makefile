@@ -3,10 +3,9 @@
 
 # defaults
 SIM ?= icarus
-FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v ocpu_core.v spi_memory.v
+PROJECT_SOURCES = tt_um_factory_test.v
 
 ifneq ($(GATES),yes)
 

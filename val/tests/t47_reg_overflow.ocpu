@@ -1,9 +1,0 @@
-    lda #$02
-    sta $0420
-    lda #$3e
-    adc $0420
-    jmp done
-
-    .org $0100
-done:
-    jmp done

@@ -1,118 +1,34 @@
 <!---
-This file is used to generate your project datasheet. Please fill in the information below and delete any unused sections.
 
-You can also include images in this folder and reference them in the markdown. Each image must be less than 512 kb in size, and the combined size of all images must be less than 1 MB.
+This file is used to generate your project datasheet. Please fill in the information below and delete any unused
+sections.
+
+You can also include images in this folder and reference them in the markdown. Each image must be less than
+512 kb in size, and the combined size of all images must be less than 1 MB.
 -->
 
-## desc
-quick and dirty repo at the LatchUp Conference, will refurbish repo for a proper submission.
+## How it works
 
-## minimized MIPS-adjacent OCPU instruction set
-the instruction set of the minimized MIPS-adjacent cpu is as follows:
+The factory test module is a simple module that can be used to test all the I/O pins of the ASIC.
 
-0000 ldi imm      ; load immediate value into accumulator (a = imm)
-0001 lda addr     ; load accumulator from memory (a = memory[addr])
-0010 sta addr     ; store accumulator to memory (memory[addr] = a)
-0011 lda [addr]   ; load accumulator from indirect address (a = memory[memory[addr]])
-0100 sta [addr]   ; store accumulator to indirect address (memory[memory[addr]] = a)
-0101 add addr     ; add memory to accumulator (a = a + memory[addr])
-0110 adc addr     ; add memory and carry to accumulator (a = a + memory[addr] + carry)
-0111 nand addr    ; bitwise nand accumulator and memory (a = ~(a & memory[addr]))
-1000 shr          ; shift accumulator right by 1 bit
-1001 jmp addr     ; jump to address
-1010 jz addr      ; jump if accumulator is zero
-1011 jc addr      ; jump if carry flag is set
-1100 call addr    ; call subroutine (push pc, jump to addr)
-1101 ret          ; return from subroutine (pop pc)
-1110 push         ; push accumulator to stack
-1111 pop          ; pop from stack to accumulator
+It has three modes of operation:
 
-## minimized 6502 OCPU instruction set (CISC)
-this 6-bit opcode instruction set is heavily paired-down but explicitly mapped to the core 6502 architecture. by including the x and y registers in hardware, we natively support the 6502's indexed addressing modes, which are heavily used by C compilers for arrays and pointers.
+1. Mirroring the input pins to the output pins (when `rst_n` is low).
+2. Mirroring the bidirectional pins to the output pins (when `rst_n` is high `sel` is low).
+3. Outputing a counter on the output pins and the bidirectional pins (when `rst_n` is high and `sel` is high).
 
-memory & immediate operations:
-- `lda #imm` / `ldx #imm` / `ldy #imm`  ; load immediate (a/x/y = imm)
-- `lda addr` / `ldx addr` / `ldy addr`  ; load from memory
-- `sta addr` / `stx addr` / `sty addr`  ; store to memory
-- `lda addr,x` / `sta addr,x`           ; absolute x-indexed (target = addr + x)
-- `lda (addr),y` / `sta (addr),y`       ; indirect y-indexed (target = memory[addr] + y)
+The following table summarizes the modes:
 
-alu (math & logic):
-- `adc addr`     ; add with carry (a = a + memory[addr] + c)
-- `sbc addr`     ; subtract with carry (a = a - memory[addr] - !c)
-- `and addr`     ; bitwise and (a = a & memory[addr])
-- `eor addr`     ; exclusive or (a = a ^ memory[addr])
-- `ora addr`     ; bitwise or (a = a | memory[addr])
-- `asl`          ; arithmetic shift left (shifts accumulator, pushes MSB to carry)
-- `lsr`          ; logical shift right (shifts accumulator, pushes LSB to carry)
-- `inx` / `dex`  ; increment / decrement x
-- `iny` / `dey`  ; increment / decrement y
+| `rst_n` | `sel` | Mode                 | uo_out value | uio pins |
+|---------|-------|----------------------|--------------|----------|
+| 0       | X     | Input mirror         | ui_in        | High-Z   |
+| 1       | 0     | Bidirectional mirror | uio_in       | High-Z   |
+| 1       | 1     | Counter              | counter      | counter  |
 
-register transfers:
-- `tax` / `txa`  ; transfer a to x / x to a
-- `tay` / `tya`  ; transfer a to y / y to a
+The counter is an 8-bit counter that increments on every clock cycle, and resets when `rst_n` is low.
 
-status flags & control:
-- `sec` / `clc`  ; set / clear carry flag
-- `sei` / `cli`  ; set / clear interrupt disable
+## How to test
 
-control flow & subroutines:
-- `jmp addr`     ; unconditional jump
-- `beq addr`     ; branch on result zero (zero flag set)
-- `bne addr`     ; branch on not zero (zero flag clear)
-- `bcs addr`     ; branch on carry set
-- `bcc addr`     ; branch on carry clear
-- `jsr addr`     ; jump to subroutine (pushes PC to stack)
-- `rts`          ; return from subroutine (pops PC)
-- `rti`          ; return from interrupt (pops SR, then PC)
-- `pha` / `pla`  ; push accumulator / pull accumulator
-
-## datapath architecture
-the ocpu features a single-core architectural approach utilizing a multi-level fsm hierarchy to manage execution:
-- master fsm: a top-level controller responsible for issuing global states such as `run` and `halt`.
-- internal core fsm: a local multi-cycle fsm that handles the fetch-decode-execute loop.
-- accumulator-based logic: to severely constrain the flip-flop footprint required per core, the datapath relies purely on an accumulator and strictly defined index registers (x, y) rather than a generalized register file.
-
-## features
-- the programmer-visible registers include a 6-bit accumulator (a), index registers (x, y), and a 6-bit stack pointer (sp).
-- the internal datapath consists of a 16-bit program counter (pc) plus 6-bit instruction register (ir) and memory data register (mdr).
-- the peripheral registers include interrupt vector and enable registers. to securely access mbits of external memory beyond the standard 64kb address space without complicating external peripheral logic, a zero-page memory-mapped i/o (mmio) banking register is used. writing to address `0xff` (e.g., `sta $ff`) inherently flips the upper memory lines sent from the cpu out to the external serial memory, maintaining hardware simplicity and 100% isa compatibility with standard 6502 compilers.
-- the controllable target pll behaves independently so the cpu clock speed can be dynamically governed externally to control power draw and test frequency bounds, the pll will be muxed with the external clock the tt chip so that we can avoid it if need be.
-- we will also add a very small piece of cache that we can read to see how much overclocking we have done as our io is limited to 50mhz maybe higher if we don't use tt pcb. we can then query this cache at 50mhz and see what the overclocked rate is.
-
-## instructions mapped to cycles
-| instruction | mode | cycle 0 | cycle 1 | cycle 2 | cycle 3 | cycle 4 | cycle 5 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `lda / ldx / ldy #imm` | immediate | fetch opcode | fetch imm (update reg) | - | - | - | - |
-| `lda / ldx / ldy addr` | absolute | fetch opcode | fetch addr_l | fetch addr_h | read memory (update reg) | - | - |
-| `sta / stx / sty addr` | absolute | fetch opcode | fetch addr_l | fetch addr_h | write register to mem | - | - |
-| `lda addr,x` | abs, x | fetch opcode | fetch addr_l | fetch addr_h | read mem at addr+x | - | - |
-| `sta addr,x` | abs, x | fetch opcode | fetch addr_l | fetch addr_h | write mem at addr+x | - | - |
-| `lda (addr),y` | ind, y | fetch opcode | fetch zp_ptr | read ptr_l | read ptr_h | read mem at ptr+y | - |
-| `sta (addr),y` | ind, y | fetch opcode | fetch zp_ptr | read ptr_l | read ptr_h | write mem at ptr+y| - |
-| `adc / sbc / etc. addr`| absolute | fetch opcode | fetch addr_l | fetch addr_h | read memory | alu execute | - |
-| `asl / lsr` | accumulator | fetch opcode | execute shift | - | - | - | - |
-| `inx/dex / iny/dey` | implied | fetch opcode | execute inc/dec | - | - | - | - |
-| `tax/txa / tay/tya` | implied | fetch opcode | execute transfer | - | - | - | - |
-| `sec/clc / sei/cli` | implied | fetch opcode | execute flag update| - | - | - | - |
-| `jmp addr` | absolute | fetch opcode | fetch addr_l | fetch addr_h (pc = addr)| - | - | - |
-| `beq / bne / bcs / bcc`| relative | fetch opcode | fetch offset | offset pc (if true) | - | - | - |
-| `jsr addr` | absolute | fetch opcode | fetch addr_l | push pc_h | push pc_l | fetch addr_h | - |
-| `rts` | implied | fetch opcode | pop pc_l | pop pc_h | inc pc | - | - |
-| `rti` | implied | fetch opcode | pop sr | pop pc_l | pop pc_h | - | - |
-| `pha` | implied | fetch opcode | push a | - | - | - | - |
-| `pla` | implied | fetch opcode | pop a | - | - | - | - |
-
-## opcodes
-        0x00        0x01        0x02        0x03
-0x00    LDA #       LDA abs     LDA abs,x    LDA (abs),y
-0x04    LDX #       LDX abs     LDY #        LDY abs
-0x08    STA abs     STA abs,x   STA (abs),y  STX abs
-0x0C    STY abs     ADC abs     SBC abs      AND abs
-0x10    EOR abs     ORA abs     ASL          LSR
-0x14    INX         DEX         INY          DEY
-0x18    TAX         TXA         TAY          TYA
-0x1C    SEC         CLC         SEI          CLI
-0x20    JMP abs     JSR abs     RTS          RTI
-0x24    PHA         PLA         BEQ          BNE
-0x28    BCS         BCC         —            —
+1. Set `rst_n` low and observe that the input pins (`ui_in`) are output on the output pins (`uo_out`).
+2. Set `rst_n` high and `sel` low and observe that the bidirectional pins (`uio_in`) are output on the output pins (`uo_out`).
+3. Set `sel` high and observe that the counter is output on both the output pins (`uo_out`) and the bidirectional pins (`uio`).

@@ -1,0 +1,36 @@
+VERSION 5.7 ;
+  NOWIREEXTENSIONATPIN ON ;
+  DIVIDERCHAR "/" ;
+  BUSBITCHARS "[]" ;
+MACRO bullshit_flat
+  CLASS BLOCK ;
+  FOREIGN bullshit_flat ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 14.960 BY 102.980 ;
+  PIN bullshit
+    PORT
+      LAYER met3 ;
+        RECT 0.780 102.630 1.490 102.980 ;
+    END
+  END bullshit
+  OBS
+      LAYER pwell ;
+        RECT 0.000 0.000 14.960 102.100 ;
+      LAYER li1 ;
+        RECT 0.180 101.750 14.780 101.920 ;
+        RECT 0.180 0.350 0.350 101.750 ;
+        RECT 0.980 101.240 13.980 101.410 ;
+        RECT 0.750 1.030 0.920 101.070 ;
+        RECT 14.040 1.030 14.210 101.070 ;
+        RECT 0.980 0.690 13.980 0.860 ;
+        RECT 14.610 0.350 14.780 101.750 ;
+        RECT 0.180 0.180 14.780 0.350 ;
+      LAYER met1 ;
+        RECT 1.000 101.210 13.960 101.440 ;
+        RECT 0.720 1.050 0.950 101.050 ;
+        RECT 14.010 1.050 14.240 101.050 ;
+        RECT 1.000 0.660 13.960 0.890 ;
+  END
+END bullshit_flat
+END LIBRARY
+

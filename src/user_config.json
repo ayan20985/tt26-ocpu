@@ -1,0 +1,14 @@
+{
+  "DESIGN_NAME": "tt_um_ocpu",
+  "VERILOG_FILES": [
+    "dir::project.v",
+    "dir::ocpu_core.v",
+    "dir::ospi_memory.v",
+    "dir::iram_regfile.v"
+  ],
+  "DIE_AREA": "0 0 161.00 225.76",
+  "FP_DEF_TEMPLATE": "dir::../tt/tech/sky130A/def/tt_block_1x2_pg.def",
+  "VDD_PIN": "VPWR",
+  "GND_PIN": "VGND",
+  "RT_MAX_LAYER": "met4"
+}

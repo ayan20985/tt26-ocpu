@@ -1,9 +1,0 @@
-    jmp target
-    lda #$01
-target:
-    lda #$42
-    jmp done
-
-    .org $0100
-done:
-    jmp done
