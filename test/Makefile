@@ -10,7 +10,7 @@ SRC_DIR = $(PWD)/../src
 # the cpu-validation testbench in tb.v instantiates ocpu_core + iram_regfile
 # directly, so we only need those two source files (plus tb.v) for the
 # rtl path. project.v / ospi_memory.v are not part of this testbench.
-PROJECT_SOURCES = iram_regfile.v ocpu_core.v
+PROJECT_SOURCES = iram_regfile.v ocpu_core.v macros/names.v
 
 ifneq ($(GATES),yes)
 
